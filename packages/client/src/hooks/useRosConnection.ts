@@ -1,19 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as ROSLIB from 'roslib';
 
 // Connection states
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-// Type declarations for global ROSLIB
-declare global {
-  interface Window {
-    ROSLIB: typeof import('roslib');
-  }
-}
-
 export function useRosConnection(wsUrl: string) {
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [error, setError] = useState<string | null>(null);
-  const rosRef = useRef<any>(null);
+  const rosRef = useRef<ROSLIB.Ros | null>(null);
   const reconnectCountRef = useRef(0);
 
   const connect = useCallback(() => {
@@ -29,15 +23,11 @@ export function useRosConnection(wsUrl: string) {
     }
 
     try {
-      if (!window.ROSLIB) {
-        throw new Error('ROSLIB library not loaded. Check your internet connection and reload.');
-      }
-
       setConnectionState('connecting');
       setError(null);
       reconnectCountRef.current += 1;
 
-      const rosInstance = new window.ROSLIB.Ros({
+      const rosInstance = new ROSLIB.Ros({
         url: wsUrl,
       });
 
@@ -46,7 +36,7 @@ export function useRosConnection(wsUrl: string) {
         if (connectionState === 'connecting') {
           rosInstance.close();
           setConnectionState('error');
-          setError('Connection timeout. Is rosbridge_websocket running?');
+          setError('Connection timeout. Is rosbridge_websocket running at ' + wsUrl + '?');
         }
       }, 10000);
 
@@ -57,11 +47,12 @@ export function useRosConnection(wsUrl: string) {
         setError(null);
       });
 
-      rosInstance.on('error', (err: Error) => {
+      rosInstance.on('error', (err: unknown) => {
         clearTimeout(timeoutId);
         console.error('ROS connection error:', err);
         setConnectionState('error');
-        setError(err.message || 'Connection error');
+        const errorMessage = err instanceof Error ? err.message : 'Connection error';
+        setError(errorMessage);
       });
 
       rosInstance.on('close', () => {
@@ -88,16 +79,22 @@ export function useRosConnection(wsUrl: string) {
     }
   }, []);
 
+  // Auto-connect on mount
   useEffect(() => {
-    connect();
+    if (connectionState === 'disconnected') {
+      connect();
+    }
+  }, []);
 
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
       if (rosRef.current) {
         rosRef.current.close();
         rosRef.current = null;
       }
     };
-  }, [connect]);
+  }, []);
 
   return {
     ros: rosRef.current,

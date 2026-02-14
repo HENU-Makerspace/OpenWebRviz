@@ -9,6 +9,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    'process.browser': 'true',
+    'process.env': {},
+  },
   server: {
     port: 3000,
     proxy: {

@@ -1,0 +1,10 @@
+<launch>
+  <arg name="port" default="9090"/>
+  <arg name="address" default="0.0.0.0"/>
+
+  <!-- Rosbridge WebSocket Server -->
+  <node pkg="rosbridge_server" exec="rosbridge_websocket" output="screen">
+    <param name="port" value="$(var port)"/>
+    <param name="address" value="$(var address)"/>
+  </node>
+</launch>
