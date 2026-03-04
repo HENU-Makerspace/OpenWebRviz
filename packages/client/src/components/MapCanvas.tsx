@@ -29,10 +29,51 @@ export function MapCanvas({
   const { mapData, robotPose, isMapLoaded, setRobotPose } = useRosMap(ros, mapTopic);
   const tfPose = useRosTf(ros, 'map', 'base_link');
   const { laserPoints, isScanReceived } = useRosLaserScan(ros, '/scan');
-  const { layers } = useLayers();
+  const { layers, subscriptionSettings } = useLayers();
 
   // Combine TF pose with map-derived pose
   const actualPose = tfPose || robotPose;
+
+  // Display data with rate limiting and pause control
+  const [displayMapData, setDisplayMapData] = useState(mapData);
+  const [displayPose, setDisplayPose] = useState(actualPose);
+  const [displayLaserPoints, setDisplayLaserPoints] = useState(laserPoints);
+
+  // Refs for rate limiting
+  const lastMapUpdate = useRef(0);
+  const lastPoseUpdate = useRef(0);
+  const lastLaserUpdate = useRef(0);
+
+  // Update display data based on settings
+  useEffect(() => {
+    const { rate, paused } = subscriptionSettings;
+    const now = performance.now();
+    const minInterval = rate > 0 ? 1000 / rate : 0;
+
+    // Update map data
+    if (!paused && mapData) {
+      if (rate === 0 || now - lastMapUpdate.current >= minInterval) {
+        setDisplayMapData(mapData);
+        lastMapUpdate.current = now;
+      }
+    }
+
+    // Update pose data
+    if (!paused && actualPose) {
+      if (rate === 0 || now - lastPoseUpdate.current >= minInterval) {
+        setDisplayPose(actualPose);
+        lastPoseUpdate.current = now;
+      }
+    }
+
+    // Update laser data
+    if (!paused && laserPoints.length > 0) {
+      if (rate === 0 || now - lastLaserUpdate.current >= minInterval) {
+        setDisplayLaserPoints(laserPoints);
+        lastLaserUpdate.current = now;
+      }
+    }
+  }, [mapData, actualPose, laserPoints, subscriptionSettings]);
 
   // Resize canvas to fit container
   useEffect(() => {
@@ -61,7 +102,7 @@ export function MapCanvas({
     ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, width, height);
 
-    if (!mapData) {
+    if (!displayMapData) {
       // Draw "No map data" message
       ctx.fillStyle = '#666';
       ctx.font = '16px sans-serif';
@@ -70,7 +111,7 @@ export function MapCanvas({
       return;
     }
 
-    const { info, data } = mapData;
+    const { info, data } = displayMapData;
     const resolution = info.resolution;
     const mapWidth = info.width;
     const mapHeight = info.height;
@@ -158,9 +199,9 @@ export function MapCanvas({
     }
 
     // Draw robot pose if available
-    if (actualPose && layers.tf) {
-      const robotScreenX = centerX + actualPose.x * cellSize;
-      const robotScreenY = centerY - actualPose.y * cellSize; // Flip Y
+    if (displayPose && layers.tf) {
+      const robotScreenX = centerX + displayPose.x * cellSize;
+      const robotScreenY = centerY - displayPose.y * cellSize; // Flip Y
 
       // Robot body (circle)
       ctx.fillStyle = '#22c55e';
@@ -173,7 +214,7 @@ export function MapCanvas({
       ctx.lineWidth = 3;
       ctx.beginPath();
       const arrowLength = 15;
-      const arrowAngle = actualPose.theta;
+      const arrowAngle = displayPose.theta;
       ctx.moveTo(robotScreenX, robotScreenY);
       ctx.lineTo(
         robotScreenX + Math.cos(-arrowAngle) * arrowLength,
@@ -188,18 +229,18 @@ export function MapCanvas({
     }
 
     // Draw laser scan points
-    if (layers.laser && laserPoints.length > 0 && actualPose) {
-      const robotScreenX = centerX + actualPose.x * cellSize;
-      const robotScreenY = centerY - actualPose.y * cellSize;
+    if (layers.laser && displayLaserPoints.length > 0 && displayPose) {
+      const robotScreenX = centerX + displayPose.x * cellSize;
+      const robotScreenY = centerY - displayPose.y * cellSize;
 
       ctx.fillStyle = '#ef4444';
       const pointSize = Math.max(1, cellSize / 20);
 
-      for (const point of laserPoints) {
+      for (const point of displayLaserPoints) {
         // Transform point from laser frame to map frame using robot pose
         // Laser is at robot position, so we just add robot position
-        const mapX = actualPose.x + point.x;
-        const mapY = actualPose.y + point.y;
+        const mapX = displayPose.x + point.x;
+        const mapY = displayPose.y + point.y;
 
         const screenX = centerX + mapX * cellSize;
         const screenY = centerY - mapY * cellSize;
@@ -224,7 +265,7 @@ export function MapCanvas({
       ctx.fillText('origin', originMarkerX + 8, originMarkerY - 8);
     }
 
-  }, [mapData, actualPose, canvasSize, view, isConnected, laserPoints, layers, isScanReceived]);
+  }, [displayMapData, displayPose, displayLaserPoints, canvasSize, view, isConnected, layers, isScanReceived]);
 
   // Optimized: Only render when data changes, not on every frame
   const drawRef = useRef(draw);
@@ -234,7 +275,7 @@ export function MapCanvas({
   // Trigger render when any data changes - use individual layer values
   useEffect(() => {
     setRenderKey(k => k + 1);
-  }, [mapData, actualPose, laserPoints, canvasSize, view, isConnected, layers.map, layers.tf, layers.laser]);
+  }, [displayMapData, displayPose, displayLaserPoints, canvasSize, view, isConnected, layers.map, layers.tf, layers.laser]);
 
   // Single render triggered by data changes
   useEffect(() => {
@@ -317,7 +358,7 @@ export function MapCanvas({
         {isScanReceived && (
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 rounded-full bg-red-500"></div>
-            <span>Laser ({laserPoints.length} pts)</span>
+            <span>Laser ({displayLaserPoints.length} pts)</span>
           </div>
         )}
       </div>

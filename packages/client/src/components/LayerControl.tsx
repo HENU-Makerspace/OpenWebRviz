@@ -8,10 +8,19 @@ interface LayerState {
   localPlan: boolean;
 }
 
+interface SubscriptionSettings {
+  rate: number;
+  paused: boolean;
+}
+
 interface LayerContextValue {
   layers: LayerState;
   toggleLayer: (layer: keyof LayerState) => void;
   setLayer: (layer: keyof LayerState, value: boolean) => void;
+  subscriptionSettings: SubscriptionSettings;
+  setSubscriptionRate: (rate: number) => void;
+  toggleSubscriptionPause: () => void;
+  setSubscriptionPaused: (paused: boolean) => void;
 }
 
 const LayerContext = createContext<LayerContextValue | null>(null);
@@ -33,6 +42,11 @@ export function LayerControlProvider({ children }: { children: React.ReactNode }
     localPlan: false,
   });
 
+  const [subscriptionSettings, setSubscriptionSettings] = useState<SubscriptionSettings>({
+    rate: 10, // Default 10 Hz
+    paused: false,
+  });
+
   const toggleLayer = useCallback((layer: keyof LayerState) => {
     setLayers(prev => ({ ...prev, [layer]: !prev[layer] }));
   }, []);
@@ -41,15 +55,37 @@ export function LayerControlProvider({ children }: { children: React.ReactNode }
     setLayers(prev => ({ ...prev, [layer]: value }));
   }, []);
 
+  const setSubscriptionRate = useCallback((rate: number) => {
+    setSubscriptionSettings(prev => ({ ...prev, rate: Math.max(0, rate) }));
+  }, []);
+
+  const toggleSubscriptionPause = useCallback(() => {
+    setSubscriptionSettings(prev => ({ ...prev, paused: !prev.paused }));
+  }, []);
+
+  const setSubscriptionPaused = useCallback((paused: boolean) => {
+    setSubscriptionSettings(prev => ({ ...prev, paused }));
+  }, []);
+
   return (
-    <LayerContext.Provider value={{ layers, toggleLayer, setLayer }}>
+    <LayerContext.Provider
+      value={{
+        layers,
+        toggleLayer,
+        setLayer,
+        subscriptionSettings,
+        setSubscriptionRate,
+        toggleSubscriptionPause,
+        setSubscriptionPaused,
+      }}
+    >
       {children}
     </LayerContext.Provider>
   );
 }
 
 export function LayerControl() {
-  const { layers, toggleLayer } = useLayers();
+  const { layers, toggleLayer, subscriptionSettings, setSubscriptionRate, toggleSubscriptionPause } = useLayers();
 
   const layersConfig = [
     { key: 'map' as const, label: 'Map', color: 'bg-blue-500' },
@@ -58,6 +94,8 @@ export function LayerControl() {
     { key: 'globalPlan' as const, label: 'Global Plan', color: 'bg-purple-500' },
     { key: 'localPlan' as const, label: 'Local Plan', color: 'bg-yellow-500' },
   ] as const;
+
+  const rateOptions = [0, 1, 2, 5, 10, 20, 30];
 
   return (
     <div className="space-y-4">
@@ -78,6 +116,40 @@ export function LayerControl() {
             </div>
           </label>
         ))}
+      </div>
+
+      {/* Data Reception Control */}
+      <div className="pt-4 border-t">
+        <h3 className="text-sm font-medium text-gray-500 mb-2">Data Reception</h3>
+
+        {/* Pause/Resume */}
+        <label className="flex items-center gap-2 cursor-pointer mb-3">
+          <input
+            type="checkbox"
+            checked={subscriptionSettings.paused}
+            onChange={toggleSubscriptionPause}
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <span className="text-sm text-gray-600">Pause data reception</span>
+        </label>
+
+        {/* Rate Control */}
+        <div className="space-y-2">
+          <label className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">Rate (Hz):</span>
+            <select
+              value={subscriptionSettings.rate}
+              onChange={(e) => setSubscriptionRate(Number(e.target.value))}
+              className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
+            >
+              {rateOptions.map(rate => (
+                <option key={rate} value={rate}>
+                  {rate === 0 ? 'Unlimited' : `${rate} Hz`}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="pt-4 border-t">
