@@ -25,7 +25,8 @@ export interface LaserPoint {
 
 export function useRosLaserScan(
   ros: ROSLIB.Ros | null,
-  scanTopic: string = '/scan'
+  scanTopic: string = '/scan',
+  paused: boolean = false
 ) {
   const [scanData, setScanData] = useState<LaserScanData | null>(null);
   const [laserPoints, setLaserPoints] = useState<LaserPoint[]>([]);
@@ -48,6 +49,7 @@ export function useRosLaserScan(
     });
 
     scanSub.subscribe((message: unknown) => {
+      if (paused) return; // Skip if paused
       const scan = message as LaserScanData;
       setScanData(scan);
       setIsScanReceived(true);
@@ -90,7 +92,7 @@ export function useRosLaserScan(
       setLaserPoints([]);
       setIsScanReceived(false);
     };
-  }, [ros, scanTopic]);
+  }, [ros, scanTopic, paused]);
 
   return {
     scanData,

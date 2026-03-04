@@ -26,10 +26,13 @@ export function MapCanvas({
   const [view, setView] = useState<ViewState>({ scale: 50, offsetX: 0, offsetY: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
 
-  const { mapData, robotPose, isMapLoaded, setRobotPose } = useRosMap(ros, mapTopic);
-  const tfPose = useRosTf(ros, 'map', 'base_link');
-  const { laserPoints, isScanReceived } = useRosLaserScan(ros, '/scan');
+  // Get subscription settings first
   const { layers, subscriptionSettings } = useLayers();
+  const isPaused = subscriptionSettings.paused;
+
+  const { mapData, robotPose, isMapLoaded, setRobotPose } = useRosMap(ros, mapTopic, isPaused);
+  const tfPose = useRosTf(ros, 'map', 'base_link', isPaused);
+  const { laserPoints, isScanReceived } = useRosLaserScan(ros, '/scan', isPaused);
 
   // Combine TF pose with map-derived pose
   const actualPose = tfPose || robotPose;

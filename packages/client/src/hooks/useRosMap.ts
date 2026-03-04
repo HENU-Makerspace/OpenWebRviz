@@ -26,7 +26,7 @@ export interface RobotPose {
   frameId: string;
 }
 
-export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map') {
+export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map', paused: boolean = false) {
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -48,6 +48,7 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map') {
     });
 
     mapSub.subscribe((message: unknown) => {
+      if (paused) return; // Skip if paused
       const gridMsg = message as MapData;
       setMapData(gridMsg);
       setIsMapLoaded(true);
@@ -64,7 +65,7 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map') {
       setMapData(null);
       setIsMapLoaded(false);
     };
-  }, [ros, mapTopic]);
+  }, [ros, mapTopic, paused]);
 
   return {
     mapData,
@@ -79,7 +80,8 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map') {
 export function useRosTf(
   ros: ROSLIB.Ros | null,
   targetFrame: string = 'map',
-  sourceFrame: string = 'base_link'
+  sourceFrame: string = 'base_link',
+  paused: boolean = false
 ) {
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
 
@@ -98,6 +100,7 @@ export function useRosTf(
 
     // Wait for transform to become available
     tfClient.subscribe(sourceFrame, (transform) => {
+      if (paused) return; // Skip if paused
       if (transform) {
         const pose: RobotPose = {
           x: transform.translation.x,
@@ -113,7 +116,7 @@ export function useRosTf(
       tfClient.unsubscribe(sourceFrame);
       setRobotPose(null);
     };
-  }, [ros, targetFrame, sourceFrame]);
+  }, [ros, targetFrame, sourceFrame, paused]);
 
   return robotPose;
 }
