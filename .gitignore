@@ -1,8 +1,4 @@
-node_modules
-packages/server/node_modules
-packages/client/node_modules
-packages/client/dist
-packages/server/dist
-*.db
-packages/server/sqlite.db
-refer/rviz
+packages/server/maps/
+packages/client/playwright-report/
+packages/client/test-results/
+bun.lock
