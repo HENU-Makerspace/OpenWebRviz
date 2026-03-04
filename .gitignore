@@ -1,4 +1,10 @@
 packages/server/maps/
 packages/client/playwright-report/
 packages/client/test-results/
+packages/client/dist/
+packages/server/dist/
+packages/client/node_modules/
+packages/server/node_modules/
 bun.lock
+node_modules/
+refer/
