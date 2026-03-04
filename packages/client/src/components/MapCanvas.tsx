@@ -86,39 +86,67 @@ export function MapCanvas({
     const centerX = width / 2 + view.offsetX;
     const centerY = height / 2 + view.offsetY;
 
-    // Draw grid cells with better performance
+    // Calculate cell size in pixels
     const cellPixelSize = Math.max(1, Math.round(cellSize / resolution));
 
-    for (let y = 0; y < mapHeight; y++) {
-      for (let x = 0; x < mapWidth; x++) {
-        const idx = y * mapWidth + x;
-        const value = data[idx];
+    // Draw map using ImageData for performance
+    if (layers.map) {
+      // Create ImageData for the canvas
+      const imageData = ctx.createImageData(width, height);
+      const pixels = imageData.data;
 
-        // Determine color
-        let color: string;
-        if (value === -1) {
-          color = '#b0b0b0'; // unknown = gray
-        } else if (value === 100) {
-          color = '#1e1e1e'; // occupied = dark
-        } else {
-          color = '#f0f0f0'; // free = white
+      // Color definitions (RGBA)
+      const unknownColor = [176, 176, 176, 255];    // #b0b0b0 gray
+      const freeColor = [240, 240, 240, 255];       // #f0f0f0 white
+      const occupiedColor = [30, 30, 30, 255];      // #1e1e1e dark
+
+      for (let y = 0; y < mapHeight; y++) {
+        for (let x = 0; x < mapWidth; x++) {
+          const idx = y * mapWidth + x;
+          const value = data[idx];
+
+          // Calculate screen position
+          const worldX = originX + x * resolution;
+          const worldY = originY + (mapHeight - 1 - y) * resolution;
+          const screenX = Math.round(centerX + worldX * cellSize);
+          const screenY = Math.round(centerY - worldY * cellSize);
+
+          // Skip if outside canvas
+          if (screenX < 0 || screenX >= width || screenY < 0 || screenY >= height) continue;
+
+          // Determine color
+          let color: number[];
+          if (value === -1) {
+            color = unknownColor;
+          } else if (value === 100) {
+            color = occupiedColor;
+          } else {
+            color = freeColor;
+          }
+
+          // Fill the cell (may be larger than 1 pixel)
+          const size = Math.max(1, cellPixelSize);
+          for (let dy = 0; dy < size; dy++) {
+            for (let dx = 0; dx < size; dx++) {
+              const px = screenX + dx;
+              const py = screenY + dy;
+              if (px >= 0 && px < width && py >= 0 && py < height) {
+                const pixelIdx = (py * width + px) * 4;
+                pixels[pixelIdx] = color[0];
+                pixels[pixelIdx + 1] = color[1];
+                pixels[pixelIdx + 2] = color[2];
+                pixels[pixelIdx + 3] = color[3];
+              }
+            }
+          }
         }
-
-        // Calculate position relative to origin
-        // x is column index, y is row index
-        const worldX = originX + x * resolution;
-        const worldY = originY + (mapHeight - 1 - y) * resolution;
-
-        const screenX = centerX + worldX * cellSize;
-        const screenY = centerY - worldY * cellSize;
-
-        ctx.fillStyle = color;
-        ctx.fillRect(screenX, screenY, cellPixelSize, cellPixelSize);
       }
+
+      ctx.putImageData(imageData, 0, 0);
     }
 
     // Draw grid lines (1 meter spacing)
-    if (cellSize >= 10) {
+    if (cellSize >= 10 && layers.map) {
       ctx.strokeStyle = 'rgba(255,255,255,0.15)';
       ctx.lineWidth = 1;
       const gridSize = 1.0; // 1 meter
@@ -203,29 +231,30 @@ export function MapCanvas({
     }
 
     // Draw map origin marker
-    const originMarkerX = centerX + info.origin.position.x * cellSize;
-    const originMarkerY = centerY - info.origin.position.y * cellSize;
+    if (layers.map) {
+      const originMarkerX = centerX + info.origin.position.x * cellSize;
+      const originMarkerY = centerY - info.origin.position.y * cellSize;
 
-    ctx.fillStyle = '#f59e0b';
-    ctx.beginPath();
-    ctx.arc(originMarkerX, originMarkerY, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#f59e0b';
-    ctx.font = '12px sans-serif';
-    ctx.fillText('origin', originMarkerX + 8, originMarkerY - 8);
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(originMarkerX, originMarkerY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#f59e0b';
+      ctx.font = '12px sans-serif';
+      ctx.fillText('origin', originMarkerX + 8, originMarkerY - 8);
+    }
 
-  }, [mapData, actualPose, canvasSize, view, isConnected, laserPoints, layers]);
+  }, [mapData, actualPose, canvasSize, view, isConnected, laserPoints, layers, isScanReceived]);
 
   // Optimized: Only render when data changes, not on every frame
-  // Use a ref to store latest draw function and trigger render on data changes
   const drawRef = useRef(draw);
   drawRef.current = draw;
   const [renderKey, setRenderKey] = useState(0);
 
-  // Trigger render when any data changes
+  // Trigger render when any data changes - use individual layer values
   useEffect(() => {
     setRenderKey(k => k + 1);
-  }, [mapData, actualPose, laserPoints, canvasSize, view, layers, isConnected]);
+  }, [mapData, actualPose, laserPoints, canvasSize, view, isConnected, layers.map, layers.tf, layers.laser]);
 
   // Single render triggered by data changes
   useEffect(() => {
