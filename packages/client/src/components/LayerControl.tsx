@@ -1,8 +1,8 @@
-import { useState, createContext, useContext, useCallback, useEffect } from 'react';
+import { useState, createContext, useContext, useCallback } from 'react';
 import * as ROSLIB from 'roslib';
 
 interface LayerControlProps {
-  ros: ROSLIB.Ros | null;
+  ros?: ROSLIB.Ros | null;
 }
 
 interface LayerState {
@@ -29,7 +29,7 @@ export function useLayers() {
   return context;
 }
 
-export function LayerControlProvider({ ros, children }: { ros: ROSLIB.Ros | null; children: React.ReactNode }) {
+export function LayerControlProvider({ children }: { children: React.ReactNode }) {
   const [layers, setLayers] = useState<LayerState>({
     map: true,
     laser: false,
@@ -57,11 +57,11 @@ export function LayerControl({ ros }: LayerControlProps) {
   const { layers, toggleLayer } = useLayers();
 
   const layersConfig = [
-    { key: 'map' as const, label: 'Map', color: 'bg-blue-500', topic: '/map' },
-    { key: 'laser' as const, label: 'Laser Scan', color: 'bg-red-500', topic: '/scan' },
-    { key: 'tf' as const, label: 'Robot (TF)', color: 'bg-green-500', topic: 'base_link' },
-    { key: 'globalPlan' as const, label: 'Global Plan', color: 'bg-purple-500', topic: '/move_base/NavfnROS/plan' },
-    { key: 'localPlan' as const, label: 'Local Plan', color: 'bg-yellow-500', topic: '/move_base/TCPlanner/local_plan' },
+    { key: 'map' as const, label: 'Map', color: 'bg-blue-500' },
+    { key: 'laser' as const, label: 'Laser Scan', color: 'bg-red-500' },
+    { key: 'tf' as const, label: 'Robot (TF)', color: 'bg-green-500' },
+    { key: 'globalPlan' as const, label: 'Global Plan', color: 'bg-purple-500' },
+    { key: 'localPlan' as const, label: 'Local Plan', color: 'bg-yellow-500' },
   ] as const;
 
   return (
@@ -69,7 +69,7 @@ export function LayerControl({ ros }: LayerControlProps) {
       <h2 className="text-lg font-semibold text-gray-700">Layers</h2>
 
       <div className="space-y-2">
-        {layersConfig.map(({ key, label, color, topic }) => (
+        {layersConfig.map(({ key, label, color }) => (
           <label key={key} className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"

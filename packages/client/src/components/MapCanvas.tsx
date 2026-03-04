@@ -77,10 +77,12 @@ export function MapCanvas({
 
     // Calculate view parameters
     const cellSize = view.scale; // pixels per meter
-    const mapPixelWidth = mapWidth * resolution * cellSize;
-    const mapPixelHeight = mapHeight * resolution * cellSize;
 
-    // Center the map
+    // Map origin position (in meters)
+    const originX = info.origin.position.x;
+    const originY = info.origin.position.y;
+
+    // Center the view on the origin (0,0 in map coordinates)
     const centerX = width / 2 + view.offsetX;
     const centerY = height / 2 + view.offsetY;
 
@@ -92,21 +94,27 @@ export function MapCanvas({
         const idx = y * mapWidth + x;
         const value = data[idx];
 
+        // Skip unknown cells to improve performance
+        if (value === -1) continue;
+
         // Determine color
         let color: string;
         if (value === 100) {
           color = '#1e1e1e'; // occupied = dark
-        } else if (value === -1) {
-          color = '#b0b0b0'; // unknown = gray
         } else {
           color = '#f0f0f0'; // free = white
         }
 
-        const drawX = Math.floor(centerX - mapPixelWidth / 2 + x * resolution * cellSize);
-        const drawY = Math.floor(centerY - mapPixelHeight / 2 + (mapHeight - 1 - y) * resolution * cellSize);
+        // Calculate position relative to origin
+        // x is column index, y is row index
+        const worldX = originX + x * resolution;
+        const worldY = originY + (mapHeight - 1 - y) * resolution;
+
+        const screenX = centerX + worldX * cellSize;
+        const screenY = centerY - worldY * cellSize;
 
         ctx.fillStyle = color;
-        ctx.fillRect(drawX, drawY, cellPixelSize, cellPixelSize);
+        ctx.fillRect(screenX, screenY, cellPixelSize, cellPixelSize);
       }
     }
 
@@ -117,20 +125,27 @@ export function MapCanvas({
       const gridSize = 1.0; // 1 meter
       const gridPixelSize = gridSize * cellSize;
 
-      const startX = Math.floor(centerX - mapPixelWidth / 2);
-      const startY = Math.floor(centerY - mapPixelHeight / 2);
+      // Draw grid lines relative to origin
+      const startGridX = Math.floor(originX);
+      const endGridX = Math.floor(originX + mapWidth * resolution);
+      const startGridY = Math.floor(originY);
+      const endGridY = Math.floor(originY + mapHeight * resolution);
 
-      for (let x = 0; x <= mapPixelWidth; x += gridPixelSize) {
+      // Vertical lines
+      for (let gx = Math.ceil(startGridX); gx <= endGridX; gx++) {
+        const screenX = centerX + gx * cellSize;
         ctx.beginPath();
-        ctx.moveTo(startX + x, startY);
-        ctx.lineTo(startX + x, startY + mapPixelHeight);
+        ctx.moveTo(screenX, 0);
+        ctx.lineTo(screenX, height);
         ctx.stroke();
       }
 
-      for (let y = 0; y <= mapPixelHeight; y += gridPixelSize) {
+      // Horizontal lines
+      for (let gy = Math.ceil(startGridY); gy <= endGridY; gy++) {
+        const screenY = centerY - gy * cellSize;
         ctx.beginPath();
-        ctx.moveTo(startX, startY + y);
-        ctx.lineTo(startX + mapPixelWidth, startY + y);
+        ctx.moveTo(0, screenY);
+        ctx.lineTo(width, screenY);
         ctx.stroke();
       }
     }
