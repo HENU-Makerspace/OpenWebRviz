@@ -16,8 +16,8 @@ test.describe('WebBot-Viz', () => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Layers' })).toBeVisible();
     await expect(page.getByText('Map', { exact: true })).toBeVisible();
-    await expect(page.getByText('Laser Scan')).toBeVisible();
-    await expect(page.getByText('Robot (TF)')).toBeVisible();
+    await expect(page.getByText('Robot (TF)', { exact: true })).toBeVisible();
+    await expect(page.getByText('Local Plan', { exact: true })).toBeVisible();
   });
 
   test('layer toggle works', async ({ page }) => {
@@ -86,12 +86,12 @@ test.describe('WebBot-Viz', () => {
     await page.goto('/');
 
     const rateSelect = page.getByRole('combobox');
-    await expect(rateSelect).toHaveValue('10');
+    await expect(rateSelect).toHaveValue('0');
 
     await rateSelect.selectOption('5');
     await expect(rateSelect).toHaveValue('5');
 
-    await rateSelect.selectOption('0');
-    await expect(rateSelect).toHaveValue('0');
+    await rateSelect.selectOption('10');
+    await expect(rateSelect).toHaveValue('10');
   });
 });
