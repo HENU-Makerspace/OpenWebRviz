@@ -11,3 +11,5 @@ refer/
 build/
 install/
 log/
+*.gv
+*.pdf

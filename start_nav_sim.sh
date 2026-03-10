@@ -17,7 +17,8 @@ echo "=========================================="
 # Check if rosbridge is running
 if ! pgrep -f "rosbridge" > /dev/null; then
     echo "[1/4] Starting rosbridge_websocket..."
-    ros2 run rosbridge_rosbridge websocket.py &
+    source /opt/ros/jazzy/setup.bash
+    ros2 launch rosbridge_server rosbridge_websocket_launch.xml &
     sleep 2
 else
     echo "[1/4] rosbridge already running"
@@ -44,7 +45,7 @@ fi
 # Start navigation2
 if ! pgrep -f "nav2_bringup" > /dev/null; then
     echo "[4/4] Starting Navigation2..."
-    ros2 launch nav2_bringup navigation_launch.py use_sim_time:=true &
+    ros2 launch nav2_bringup bringup_launch.py use_sim_time:=true &
     sleep 3
 else
     echo "[4/4] Navigation2 already running"

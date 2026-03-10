@@ -294,7 +294,7 @@ function NetworkPanel() {
 
 function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
-  const { ros, isConnected } = useRosConnection('ws://localhost:9090');
+  const { ros, isConnected } = useRosConnection('ws://192.168.1.58:9090');
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();
   const [navClickMode, setNavClickMode] = useState<'none' | 'initial_pose' | 'goal'>('none');
@@ -342,7 +342,7 @@ function AppContent() {
             {showDebug ? 'Hide Debug' : 'Show Debug'}
           </button>
         </div>
-        <ConnectionStatus wsUrl="ws://localhost:9090" />
+        <ConnectionStatus wsUrl="ws://192.168.1.58:9090" />
       </header>
 
       <div className="flex-1 flex overflow-hidden">
