@@ -23,7 +23,7 @@ export function useKeyboardTeleop(
     cmdVelPubRef.current = new ROSLIB.Topic({
       ros,
       name: settings.cmdVelTopic,
-      messageType: 'geometry_msgs/msg/TwistStamped',
+      messageType: 'geometry_msgs/msg/Twist',
     });
 
     console.log('[useKeyboardTeleop] Publisher initialized for', settings.cmdVelTopic);

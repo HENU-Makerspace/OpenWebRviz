@@ -26,7 +26,7 @@ export interface RobotPose {
   frameId: string;
 }
 
-export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map', paused: boolean = false) {
+export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/map', paused: boolean = false) {
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -34,7 +34,8 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string = '/map', pau
 
   // Subscribe to map
   useEffect(() => {
-    if (!ros) {
+    // If no topic specified (navigation mode with static map), don't subscribe
+    if (!ros || !mapTopic) {
       setMapData(null);
       setIsMapLoaded(false);
       return;

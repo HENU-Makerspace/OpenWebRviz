@@ -12,6 +12,7 @@ interface MapCanvasProps {
   mapTopic?: string;
   navClickMode?: 'none' | 'initial_pose' | 'goal';
   setNavClickMode?: (mode: 'none' | 'initial_pose' | 'goal') => void;
+  selectedMap?: string | null; // Static map name for navigation mode
 }
 
 interface ViewState {
@@ -26,6 +27,7 @@ export function MapCanvas({
   mapTopic = '/map',
   navClickMode = 'none',
   setNavClickMode,
+  selectedMap = null,
 }: MapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,11 +44,35 @@ export function MapCanvas({
   const tfPaused = isPaused || !layers.tf;
   const pathPaused = isPaused || (!layers.globalPlan && !layers.localPlan);
 
-  const { mapData, robotPose, isMapLoaded, setRobotPose } = useRosMap(ros, mapTopic, mapPaused);
+  // In navigation mode with a selected static map, don't subscribe to /map topic
+  const useStaticMap = mode === 'navigation' && selectedMap;
+  const { mapData, robotPose, isMapLoaded, setRobotPose } = useRosMap(
+    ros,
+    useStaticMap ? null : mapTopic,
+    mapPaused
+  );
   const { robotPose: tfPose } = useRosTfTree(ros, tfPaused);
   const { globalPath, localPath } = useRosPath(ros, '/plan', '/local_plan', pathPaused);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
+
+  // Load static map data when in navigation mode with selected map
+  const [staticMapData, setStaticMapData] = useState<MapData | null>(null);
+
+  useEffect(() => {
+    if (useStaticMap && selectedMap) {
+      fetch(`http://localhost:4000/api/maps/${selectedMap}/data`)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.error) {
+            setStaticMapData(data);
+          }
+        })
+        .catch(err => console.error('Failed to load static map:', err));
+    } else {
+      setStaticMapData(null);
+    }
+  }, [useStaticMap, selectedMap]);
 
   // Combine TF pose with map-derived pose
   const actualPose = tfPose || robotPose;
@@ -59,10 +85,15 @@ export function MapCanvas({
   useEffect(() => {
     const { paused } = subscriptionSettings;
     if (!paused) {
-      if (mapData) setDisplayMapData(mapData);
+      // Use static map in navigation mode, otherwise use ROS map
+      if (staticMapData) {
+        setDisplayMapData(staticMapData);
+      } else if (mapData) {
+        setDisplayMapData(mapData);
+      }
       if (actualPose) setDisplayPose(actualPose);
     }
-  }, [mapData, actualPose, subscriptionSettings.paused]);
+  }, [mapData, staticMapData, actualPose, subscriptionSettings.paused]);
 
   // Resize canvas to fit container
   useEffect(() => {
@@ -139,14 +170,14 @@ export function MapCanvas({
             continue;
           }
 
-          // Determine color
+          // Determine color using threshold
           let color: string;
-          if (value === -1) {
-            color = '#b0b0b0'; // unknown = gray
-          } else if (value === 100) {
-            color = '#1e1e1e'; // occupied = dark
+           if (value >= 65) {
+            color = '#1e1e1e'; // occupied (value >= 65) = dark
+          } else if (value <= 10) {
+            color = '#f0f0f0'; // free (value <= 30) = white
           } else {
-            color = '#f0f0f0'; // free = white
+            color = '#b0b0b0'; // uncertain = gray
           }
 
           ctx.fillStyle = color;

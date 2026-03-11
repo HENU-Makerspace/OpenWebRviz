@@ -12,6 +12,11 @@ const MAPS_DIR = path.join(process.cwd(), 'maps');
 const SLAM_PROCESS_FILE = path.join(process.cwd(), '.slam_pid');
 const ROSBRIDGE_PROCESS_FILE = path.join(process.cwd(), '.rosbridge_pid');
 
+// Jetson configuration
+const JETSON_HOST = process.env.JETSON_HOST || '192.168.1.58';
+const JETSON_USER = process.env.JETSON_USER || 'nvidia';
+const JETSON_MAPS_DIR = '/home/nvidia/maps';
+
 // Ensure maps directory exists
 if (!fs.existsSync(MAPS_DIR)) {
   fs.mkdirSync(MAPS_DIR, { recursive: true });
@@ -94,6 +99,93 @@ app.get('/api/maps', async (c) => {
     return c.json({ maps });
   } catch (error) {
     return c.json({ error: 'Failed to list maps', details: String(error) }, 500);
+  }
+});
+
+// Get static map data (for navigation mode - loads once, no updates from robot)
+app.get('/api/maps/:name/data', async (c) => {
+  try {
+    const mapName = c.req.param('name');
+    const yamlPath = path.join(MAPS_DIR, `${mapName}.yaml`);
+    const pgmPath = path.join(MAPS_DIR, `${mapName}.pgm`);
+
+    if (!fs.existsSync(yamlPath) || !fs.existsSync(pgmPath)) {
+      return c.json({ error: 'Map not found', details: `yaml: ${yamlPath}, pgm: ${pgmPath}` }, 404);
+    }
+
+    // Read YAML metadata
+    const yamlContent = fs.readFileSync(yamlPath, 'utf-8');
+    const yamlData: Record<string, any> = {};
+
+    const lines = yamlContent.split('\n');
+    for (const line of lines) {
+      const match = line.match(/^(\w+):\s*(.+)$/);
+      if (match) {
+        const key = match[1];
+        const value = match[2].trim();
+        if (value.startsWith('[') && value.endsWith(']')) {
+          yamlData[key] = value.slice(1, -1).split(',').map((v: string) => parseFloat(v.trim()));
+        } else if (!isNaN(Number(value))) {
+          yamlData[key] = Number(value);
+        } else {
+          yamlData[key] = value;
+        }
+      }
+    }
+
+    // Read PGM file
+    const pgmBuffer = fs.readFileSync(pgmPath);
+
+    // Find header end (look for first newline after magic "P5")
+    let headerEnd = 0;
+    let lineIdx = 0;
+    for (let i = 0; i < pgmBuffer.length && lineIdx < 3; i++) {
+      if (pgmBuffer[i] === 0x0A) {
+        lineIdx++;
+        headerEnd = i + 1;
+      }
+    }
+
+    // Parse dimensions from header
+    const headerStr = pgmBuffer.slice(0, headerEnd).toString('ascii');
+    const headerLines = headerStr.split('\n').filter(l => l.trim() && !l.startsWith('P'));
+    const dims = headerLines[0].trim().split(/\s+/);
+    const width = parseInt(dims[0]);
+    const height = parseInt(dims[1]);
+    const maxVal = parseInt(headerLines[1].trim());
+
+    // Extract image data
+    const imageData: number[] = [];
+    for (let i = headerEnd; i < pgmBuffer.length; i++) {
+      const val = pgmBuffer[i];
+      // Convert: PGM 0=black(occupied), maxVal=white(free) → OccupancyGrid 100=occupied, 0=free
+      const occupied = Math.round(100 - (val / maxVal) * 100);
+      imageData.push(occupied);
+    }
+
+    return c.json({
+      header: {
+        stamp: { sec: Math.floor(Date.now() / 1000), nsec: 0 },
+        frame_id: 'map'
+      },
+      info: {
+        map_load_time: { sec: Math.floor(Date.now() / 1000), nsec: 0 },
+        resolution: yamlData.resolution || 0.05,
+        width: width,
+        height: height,
+        origin: {
+          position: {
+            x: yamlData.origin?.[0] || 0,
+            y: yamlData.origin?.[1] || 0,
+            z: yamlData.origin?.[2] || 0
+          },
+          orientation: { x: 0, y: 0, z: 0, w: 1 }
+        }
+      },
+      data: imageData
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to load map', details: String(error) }, 500);
   }
 });
 
@@ -233,6 +325,49 @@ app.post('/api/maps/save', async (c) => {
     });
   } catch (error) {
     return c.json({ error: 'Failed to save map', details: String(error) }, 500);
+  }
+});
+
+// Sync map from Jetson to server
+app.post('/api/maps/sync-from-robot', async (c) => {
+  try {
+    const body = await c.req.json();
+    const mapName = body.name;
+
+    if (!mapName) {
+      return c.json({ error: 'Map name is required' }, 400);
+    }
+
+    const localYamlPath = path.join(MAPS_DIR, `${mapName}.yaml`);
+    const localPgmPath = path.join(MAPS_DIR, `${mapName}.pgm`);
+
+    // Check if already exists locally
+    if (fs.existsSync(localYamlPath) && fs.existsSync(localPgmPath)) {
+      return c.json({
+        status: 'exists',
+        map: { name: mapName, yamlPath: localYamlPath, pgmPath: localPgmPath }
+      });
+    }
+
+    // Copy from Jetson using scp
+    const remotePath = `${JETSON_USER}@${JETSON_HOST}:${JETSON_MAPS_DIR}/${mapName}`;
+
+    try {
+      // Copy YAML file
+      await execAsync(`scp ${remotePath}.yaml ${localYamlPath}`);
+      // Copy PGM file
+      await execAsync(`scp ${remotePath}.pgm ${localPgmPath}`);
+    } catch (e) {
+      console.error('SCP error:', e);
+      return c.json({ error: 'Failed to copy map from robot', details: String(e) }, 500);
+    }
+
+    return c.json({
+      status: 'synced',
+      map: { name: mapName, yamlPath: localYamlPath, pgmPath: localPgmPath }
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to sync map', details: String(error) }, 500);
   }
 });
 

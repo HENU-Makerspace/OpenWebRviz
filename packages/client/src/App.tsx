@@ -7,44 +7,36 @@ import { DebugPanel } from './hooks/usePerformanceMonitor';
 import { useRosConnection } from './hooks/useRosConnection';
 import { useKeyboardTeleop } from './hooks/useKeyboardTeleop';
 import { ModeProvider, useMode } from './hooks/useMode';
-import { useSlamControl, useRosbridgeControl, useMapManager, useNetworkInfo } from './hooks/useSlamControl';
+import { useSlamControl, useMapManager, useNetworkInfo } from './hooks/useSlamControl';
+import { useSystemManager } from './hooks/useSystemManager';
 
 function RosbridgePanel() {
-  const { rosbridgeRunning, rosbridgeInitialized, loading, startRosbridge, stopRosbridge } = useRosbridgeControl();
-
-  if (!rosbridgeInitialized) {
-    return (
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium text-gray-500">Rosbridge</h3>
-        <div className="text-xs text-gray-400">Checking status...</div>
-      </div>
-    );
-  }
+  // Use WebSocket connection status to determine if rosbridge is running
+  // (rosbridge runs on Jetson, so we check if we can connect via WebSocket)
+  const { isConnected, reconnect, disconnect } = useRosConnection('ws://192.168.1.58:9090');
 
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-medium text-gray-500">Rosbridge</h3>
 
-      {!rosbridgeRunning ? (
+      {!isConnected ? (
         <button
-          onClick={startRosbridge}
-          disabled={loading}
-          className="w-full px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50"
+          onClick={reconnect}
+          className="w-full px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600"
         >
-          {loading ? 'Starting...' : 'Start Rosbridge'}
+          Connect to Robot
         </button>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-green-600">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            Rosbridge Running
+            Connected to Robot
           </div>
           <button
-            onClick={stopRosbridge}
-            disabled={loading}
-            className="w-full px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50"
+            onClick={disconnect}
+            className="w-full px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
           >
-            {loading ? 'Stopping...' : 'Stop Rosbridge'}
+            Disconnect
           </button>
         </div>
       )}
@@ -53,31 +45,48 @@ function RosbridgePanel() {
 }
 
 function MappingPanel() {
-  const { slamRunning, slamRunningInitialized, loading: slamLoading, startSlam, startWithTmux, stopSlam, usingTmux } = useSlamControl();
-  const { maps, loading: mapsLoading, saveMap, fetchMaps } = useMapManager();
+  const { ros, isConnected } = useRosConnection('ws://192.168.1.58:9090');
+  const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
+  const { maps, fetchMaps, loading: mapsLoading, saveMap: saveMapToServer } = useMapManager();
+  const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
   const [saving, setSaving] = useState(false);
+
+  const isRobotMode = robotStatus.mode === 'slam';
+  const isRunning = isRobotMode || slamRunning;
 
   const handleStartSlam = async () => {
     await startSlam();
   };
 
-  const handleStartWithTmux = async () => {
-    await startWithTmux();
-  };
-
   const handleStopSlam = async () => {
-    await stopSlam();
+    await stopAll();
   };
 
   const handleSaveMap = async () => {
     setSaving(true);
-    const mapName = `map_${Date.now()}`;
-    await saveMap(mapName);
+    // Save on robot first
+    const fullPath = await saveMap();
+    if (fullPath) {
+      // Extract map name from path (e.g., "/home/nvidia/maps/map_123" -> "map_123")
+      const mapName = fullPath.replace('Map saved: ', '').split('/').pop();
+      // Sync map from robot to server
+      try {
+        await fetch('http://localhost:4000/api/maps/sync-from-robot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: mapName }),
+        });
+      } catch (e) {
+        console.error('Failed to sync map:', e);
+      }
+      // Refresh maps from server
+      await fetchMaps();
+    }
     setSaving(false);
   };
 
   // Show loading while checking status
-  if (!slamRunningInitialized) {
+  if (!slamRunningInitialized && !robotStatus.mode) {
     return (
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-gray-500">SLAM</h3>
@@ -90,28 +99,21 @@ function MappingPanel() {
     <div className="space-y-3">
       <h3 className="text-sm font-medium text-gray-500">SLAM</h3>
 
-      {!slamRunning ? (
+      {!isRunning ? (
         <div className="space-y-2">
           <button
             onClick={handleStartSlam}
-            disabled={slamLoading}
+            disabled={robotStatus.loading || slamLoading}
             className="w-full px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50"
           >
-            {slamLoading ? 'Starting...' : 'Start SLAM'}
-          </button>
-          <button
-            onClick={handleStartWithTmux}
-            disabled={slamLoading}
-            className="w-full px-3 py-2 bg-purple-500 text-white rounded text-sm hover:bg-purple-600 disabled:opacity-50"
-          >
-            {slamLoading ? 'Starting...' : 'Run Robot Script (TMUX)'}
+            {robotStatus.loading || slamLoading ? 'Starting...' : 'Start SLAM'}
           </button>
         </div>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-green-600">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            SLAM Running {usingTmux && '(TMUX)'}
+            SLAM Running {isRobotMode ? '(Robot)' : usingTmux ? '(TMUX)' : ''}
           </div>
           <button
             onClick={handleSaveMap}
@@ -122,10 +124,10 @@ function MappingPanel() {
           </button>
           <button
             onClick={handleStopSlam}
-            disabled={slamLoading}
+            disabled={robotStatus.loading || slamLoading}
             className="w-full px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50"
           >
-            {slamLoading ? 'Stopping...' : 'Stop SLAM'}
+            {robotStatus.loading || slamLoading ? 'Stopping...' : 'Stop SLAM'}
           </button>
         </div>
       )}
@@ -152,48 +154,35 @@ function MappingPanel() {
 interface NavigationPanelProps {
   navClickMode: 'none' | 'initial_pose' | 'goal';
   setNavClickMode: (mode: 'none' | 'initial_pose' | 'goal') => void;
+  selectedMap: string | null;
+  setSelectedMap: (map: string | null) => void;
 }
 
-function NavigationPanel({ navClickMode, setNavClickMode }: NavigationPanelProps) {
+function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelectedMap }: NavigationPanelProps) {
   const { maps, fetchMaps, loading } = useMapManager();
-  const [selectedMap, setSelectedMap] = useState<string | null>(null);
-  const [navStatus, setNavStatus] = useState<{ running: boolean; tmux: boolean }>({ running: false, tmux: false });
   const [starting, setStarting] = useState(false);
+
+  // Use system manager for robot control
+  const { ros, isConnected } = useRosConnection('ws://192.168.1.58:9090');
+  const { status: robotStatus, startNavigation: startNav, stopAll } = useSystemManager(ros, isConnected);
+
+  const isNavRunning = robotStatus.mode === 'navigation';
 
   useEffect(() => {
     fetchMaps();
   }, [fetchMaps]);
 
-  // Poll navigation status
-  useEffect(() => {
-    const checkStatus = async () => {
-      try {
-        const res = await fetch('http://localhost:4000/api/navigation/status');
-        const data = await res.json();
-        setNavStatus(data);
-      } catch {}
-    };
-    checkStatus();
-    const interval = setInterval(checkStatus, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
   const startNavigation = async () => {
     if (!selectedMap) return;
     setStarting(true);
-    try {
-      await fetch('http://localhost:4000/api/navigation/start-tmux', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mapName: selectedMap }),
-      });
-    } finally {
-      setStarting(false);
-    }
+    // 传递 Jetson 上的地图路径
+    const mapYamlPath = `/home/nvidia/maps/${selectedMap}.yaml`;
+    await startNav(mapYamlPath);
+    setStarting(false);
   };
 
   const stopNavigation = async () => {
-    await fetch('http://localhost:4000/api/navigation/stop-tmux', { method: 'POST' });
+    await stopAll();
   };
 
   if (loading) {
@@ -215,7 +204,7 @@ function NavigationPanel({ navClickMode, setNavClickMode }: NavigationPanelProps
         value={selectedMap || ''}
         onChange={(e) => setSelectedMap(e.target.value || null)}
         className="w-full px-2 py-1 text-xs border rounded"
-        disabled={navStatus.running}
+        disabled={isNavRunning}
       >
         <option value="">-- Select Map --</option>
         {maps.map((map) => (
@@ -225,7 +214,7 @@ function NavigationPanel({ navClickMode, setNavClickMode }: NavigationPanelProps
         ))}
       </select>
 
-      {selectedMap && !navStatus.running && (
+      {selectedMap && !isNavRunning && (
         <button
           onClick={startNavigation}
           disabled={starting}
@@ -235,7 +224,7 @@ function NavigationPanel({ navClickMode, setNavClickMode }: NavigationPanelProps
         </button>
       )}
 
-      {navStatus.running && (
+      {isNavRunning && (
         <div className="space-y-2">
           <div className="text-xs text-green-600">Navigation Running</div>
 
@@ -298,12 +287,28 @@ function AppContent() {
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();
   const [navClickMode, setNavClickMode] = useState<'none' | 'initial_pose' | 'goal'>('none');
+  const [selectedMap, setSelectedMap] = useState<string | null>(null);
+
+  // System manager for robot control
+  const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
+  const { maps, fetchMaps, saveMap: saveMapToServer } = useMapManager();
 
   useKeyboardTeleop(ros, {
     linearSpeed: 0.5,
     angularSpeed: 1.0,
     cmdVelTopic: '/cmd_vel',
   }, isConnected && mode === 'teleop');
+
+  // Handle save map - save on robot first, then copy to server
+  const handleSaveMap = async () => {
+    if (!isConnected) return;
+    // Save on robot
+    const result = await saveMap();
+    if (result) {
+      // Fetch maps from server after save
+      fetchMaps();
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -351,7 +356,12 @@ function AppContent() {
           {mode === 'teleop' ? (
             <MappingPanel />
           ) : (
-            <NavigationPanel navClickMode={navClickMode} setNavClickMode={setNavClickMode} />
+            <NavigationPanel
+              navClickMode={navClickMode}
+              setNavClickMode={setNavClickMode}
+              selectedMap={selectedMap}
+              setSelectedMap={setSelectedMap}
+            />
           )}
           <LayerControl />
           <NetworkPanel />
@@ -359,7 +369,13 @@ function AppContent() {
 
         <main className="flex-1 relative">
           {showDebug && <DebugPanel />}
-          <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} />
+          <MapCanvas
+            ros={ros}
+            isConnected={isConnected}
+            navClickMode={navClickMode}
+            setNavClickMode={setNavClickMode}
+            selectedMap={selectedMap}
+          />
           <ImageOverlay ros={ros} />
         </main>
       </div>
