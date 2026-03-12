@@ -32,6 +32,13 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Get config for Jetson
+app.get('/api/config', (c) => {
+  return c.json({
+    serverUrl: `http://${c.req.header('host')?.split(':')[0] || 'localhost'}:4000`,
+  });
+});
+
 // Check rosbridge status
 app.get('/api/rosbridge/status', async (c) => {
   try {
@@ -330,9 +337,11 @@ app.post('/api/maps/save', async (c) => {
 
 // Sync map from Jetson to server
 app.post('/api/maps/sync-from-robot', async (c) => {
+  console.log('[sync-from-robot] Received request, JETSON_HOST:', JETSON_HOST, 'JETSON_USER:', JETSON_USER);
   try {
     const body = await c.req.json();
     const mapName = body.name;
+    console.log('[sync-from-robot] Map name:', mapName);
 
     if (!mapName) {
       return c.json({ error: 'Map name is required' }, 400);
@@ -343,6 +352,7 @@ app.post('/api/maps/sync-from-robot', async (c) => {
 
     // Check if already exists locally
     if (fs.existsSync(localYamlPath) && fs.existsSync(localPgmPath)) {
+      console.log('[sync-from-robot] Map already exists locally');
       return c.json({
         status: 'exists',
         map: { name: mapName, yamlPath: localYamlPath, pgmPath: localPgmPath }
@@ -351,14 +361,16 @@ app.post('/api/maps/sync-from-robot', async (c) => {
 
     // Copy from Jetson using scp
     const remotePath = `${JETSON_USER}@${JETSON_HOST}:${JETSON_MAPS_DIR}/${mapName}`;
+    console.log('[sync-from-robot] SCP from:', remotePath);
 
     try {
       // Copy YAML file
       await execAsync(`scp ${remotePath}.yaml ${localYamlPath}`);
       // Copy PGM file
       await execAsync(`scp ${remotePath}.pgm ${localPgmPath}`);
+      console.log('[sync-from-robot] SCP completed');
     } catch (e) {
-      console.error('SCP error:', e);
+      console.error('[sync-from-robot] SCP error:', e);
       return c.json({ error: 'Failed to copy map from robot', details: String(e) }, 500);
     }
 
@@ -367,7 +379,38 @@ app.post('/api/maps/sync-from-robot', async (c) => {
       map: { name: mapName, yamlPath: localYamlPath, pgmPath: localPgmPath }
     });
   } catch (error) {
+    console.error('[sync-from-robot] Error:', error);
     return c.json({ error: 'Failed to sync map', details: String(error) }, 500);
+  }
+});
+
+// Upload map from Jetson via HTTP (JSON with base64)
+app.post('/api/maps/upload', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { name, yaml, pgm } = body;
+
+    if (!name || !yaml || !pgm) {
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    const localYamlPath = path.join(MAPS_DIR, `${name}.yaml`);
+    const localPgmPath = path.join(MAPS_DIR, `${name}.pgm`);
+
+    // Save files
+    fs.writeFileSync(localYamlPath, yaml, 'utf-8');
+    const pgmBuffer = Buffer.from(pgm, 'base64');
+    fs.writeFileSync(localPgmPath, pgmBuffer);
+
+    console.log('[upload] Map saved:', name);
+
+    return c.json({
+      success: true,
+      map: { name, yamlPath: localYamlPath, pgmPath: localPgmPath }
+    });
+  } catch (error) {
+    console.error('[upload] Error:', error);
+    return c.json({ error: 'Failed to upload map', details: String(error) }, 500);
   }
 });
 

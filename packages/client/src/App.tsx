@@ -64,24 +64,16 @@ function MappingPanel() {
 
   const handleSaveMap = async () => {
     setSaving(true);
-    // Save on robot first
-    const fullPath = await saveMap();
-    if (fullPath) {
-      // Extract map name from path (e.g., "/home/nvidia/maps/map_123" -> "map_123")
-      const mapName = fullPath.replace('Map saved: ', '').split('/').pop();
-      // Sync map from robot to server
-      try {
-        await fetch('http://localhost:4000/api/maps/sync-from-robot', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: mapName }),
-        });
-      } catch (e) {
-        console.error('Failed to sync map:', e);
-      }
-      // Refresh maps from server
-      await fetchMaps();
-    }
+    console.log('[SaveMap] Starting save on robot...');
+    // Save on robot (Jetson will upload to server automatically)
+    const result = await saveMap();
+    console.log('[SaveMap] Robot save result:', result);
+    // Wait for upload and refresh maps
+    console.log('[SaveMap] Waiting for upload...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    console.log('[SaveMap] Refreshing maps from server...');
+    await fetchMaps();
+    console.log('[SaveMap] Done, maps:', maps);
     setSaving(false);
   };
 
@@ -176,7 +168,7 @@ function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelect
     if (!selectedMap) return;
     setStarting(true);
     // 传递 Jetson 上的地图路径
-    const mapYamlPath = `/home/nvidia/maps/${selectedMap}.yaml`;
+    const mapYamlPath = `/home/nvidia/maps/${selectedMap}`;
     await startNav(mapYamlPath);
     setStarting(false);
   };
@@ -299,15 +291,13 @@ function AppContent() {
     cmdVelTopic: '/cmd_vel',
   }, isConnected && mode === 'teleop');
 
-  // Handle save map - save on robot first, then copy to server
+  // Handle save map - save on robot (Jetson will upload to server automatically)
   const handleSaveMap = async () => {
     if (!isConnected) return;
-    // Save on robot
-    const result = await saveMap();
-    if (result) {
-      // Fetch maps from server after save
-      fetchMaps();
-    }
+    await saveMap();
+    // Wait for upload and refresh maps
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    fetchMaps();
   };
 
   return (

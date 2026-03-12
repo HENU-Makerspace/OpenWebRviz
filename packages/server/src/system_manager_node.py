@@ -1,13 +1,42 @@
 #!/usr/bin/env python3
+import base64
 import os
 import signal
 import subprocess
 import time
 
 import rclpy
+import requests
 from rclpy.node import Node
 from std_srvs.srv import Trigger
 from jetson_interfaces.srv import StartNav
+
+
+def get_server_url_from_discovery(default_url='http://192.168.1.100:4000'):
+    """Try to discover server URL via mDNS or config API"""
+    import socket
+
+    # Try to get server IP from rosbridge server (assuming same machine)
+    # First try mDNS
+    try:
+        socket.setdefaulttimeout(2)
+        # Try to resolve server via mDNS
+        socket.gethostbyname('webbot-viz.local')
+        return 'http://webbot-viz.local:4000'
+    except:
+        pass
+
+    # Try config API from known IPs
+    for ip in ['192.168.1.100', '192.168.1.101', '192.168.1.102']:
+        try:
+            resp = requests.get(f'http://{ip}:4000/api/config', timeout=2)
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get('serverUrl', default_url)
+        except:
+            continue
+
+    return default_url
 
 
 class SystemManager(Node):
@@ -23,6 +52,7 @@ class SystemManager(Node):
         self.declare_parameter('nav_package', 'jetson_node_pkg')
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
         self.declare_parameter('nav2_params_file', '/home/nvidia/ros2_ws/my_nav2_params.yaml')
+        self.declare_parameter('server_url', 'http://192.168.1.100:4000')
 
         self.maps_dir = self.get_parameter('maps_dir').value
         self.slam_package = self.get_parameter('slam_package').value
@@ -30,6 +60,9 @@ class SystemManager(Node):
         self.nav_package = self.get_parameter('nav_package').value
         self.nav_launch_file = self.get_parameter('nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
+
+        # Try to get server URL from config API, fallback to parameter or default
+        self.server_url = get_server_url_from_discovery()
 
         os.makedirs(self.maps_dir, exist_ok=True)
 
@@ -135,6 +168,28 @@ class SystemManager(Node):
                 pgm_path = f'{map_path}.pgm'
 
                 if os.path.exists(yaml_path) and os.path.exists(pgm_path):
+                    # Upload to server
+                    try:
+                        with open(yaml_path, 'r') as f:
+                            yaml_content = f.read()
+                        with open(pgm_path, 'rb') as f:
+                            pgm_content = base64.b64encode(f.read()).decode('utf-8')
+
+                        upload_data = {
+                            'name': map_name,
+                            'yaml': yaml_content,
+                            'pgm': pgm_content
+                        }
+                        upload_url = f'{self.server_url}/api/maps/upload'
+                        self.get_logger().info(f'Uploading map to {upload_url}...')
+                        upload_resp = requests.post(upload_url, json=upload_data, timeout=30)
+                        if upload_resp.status_code == 200:
+                            self.get_logger().info('Map uploaded successfully')
+                        else:
+                            self.get_logger().warn(f'Upload failed: {upload_resp.status_code} {upload_resp.text}')
+                    except Exception as upload_err:
+                        self.get_logger().warn(f'Failed to upload map: {upload_err}')
+
                     response.success = True
                     response.message = f'Map saved: {yaml_path}'
                 else:

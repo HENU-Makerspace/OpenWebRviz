@@ -140,35 +140,25 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
 
   // 保存地图
   const saveMap = useCallback(async (): Promise<string | null> => {
+    console.log('[useSystemManager] Calling /system/save_map...');
     setStatus(prev => ({ ...prev, loading: true, error: null }));
     try {
       const response = await callService<{ success: boolean; message: string }>('/system/save_map');
+      console.log('[useSystemManager] save_map response:', response);
       setStatus(prev => ({ ...prev, loading: false }));
       if (response.success) {
-        // 从返回路径提取地图名称，例如 /home/nvidia/maps/map_123 -> map_123
+        // 地图会由 Jetson 直接上传到服务器，这里只需要返回地图名称
         const mapPath = response.message;
         const mapName = mapPath.split('/').pop() || mapPath;
-
-        // 同步到服务器
-        try {
-          const syncRes = await fetch('http://localhost:4000/api/maps/sync-from-robot', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: mapName }),
-          });
-          if (!syncRes.ok) {
-            console.error('Sync failed:', await syncRes.text());
-          }
-        } catch (syncErr) {
-          console.error('Sync error:', syncErr);
-        }
-
+        console.log('[useSystemManager] Map saved, name:', mapName);
         return mapName;
       } else {
+        console.error('[useSystemManager] Save failed:', response.message);
         setStatus(prev => ({ ...prev, error: response.message }));
         return null;
       }
     } catch (e: any) {
+      console.error('[useSystemManager] Save error:', e);
       setStatus(prev => ({ ...prev, loading: false, error: e.message }));
       return null;
     }
