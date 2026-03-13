@@ -36,7 +36,7 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
       if (!tfMsg.transforms) return;
 
       // Find robot frame - try multiple common names
-      const commonFrames = ['body', 'base_footprint', 'robot_base', 'base'];
+      const commonFrames = ['base_link', 'base_footprint', 'robot_base', 'base', 'body'];
 
       for (const transform of tfMsg.transforms) {
         const childFrameId = transform.child_frame_id;
@@ -74,7 +74,7 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
 export function useRosTf(
   ros: ROSLIB.Ros | null,
   targetFrame: string = 'map',
-  sourceFrame: string = 'body',
+  sourceFrame: string = 'base_link',
   paused: boolean = false
 ) {
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);

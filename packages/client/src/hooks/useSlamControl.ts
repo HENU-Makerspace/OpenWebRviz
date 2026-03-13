@@ -266,7 +266,7 @@ export function useNetworkInfo() {
     fetch('/api/network')
       .then(res => res.json())
       .then(setNetworkInfo)
-      .catch(() => setNetworkInfo({ ips: ['localhost'], hostname: 'localhost', port: 4000 }));
+      .catch(() => setNetworkInfo({ ips: ['localhost'], hostname: 'localhost', port: 4001 }));
   }, []);
 
   return networkInfo;

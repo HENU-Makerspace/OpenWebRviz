@@ -12,7 +12,7 @@ from std_srvs.srv import Trigger
 from jetson_interfaces.srv import StartNav
 
 
-def get_server_url_from_discovery(default_url='http://192.168.1.100:4000'):
+def get_server_url_from_discovery(default_url='http://192.168.1.100:4001'):
     """Try to discover server URL via mDNS or config API"""
     import socket
 
@@ -22,14 +22,14 @@ def get_server_url_from_discovery(default_url='http://192.168.1.100:4000'):
         socket.setdefaulttimeout(2)
         # Try to resolve server via mDNS
         socket.gethostbyname('webbot-viz.local')
-        return 'http://webbot-viz.local:4000'
+        return 'http://webbot-viz.local:4001'
     except:
         pass
 
     # Try config API from known IPs
     for ip in ['192.168.1.100', '192.168.1.101', '192.168.1.102']:
         try:
-            resp = requests.get(f'http://{ip}:4000/api/config', timeout=2)
+            resp = requests.get(f'http://{ip}:4001/api/config', timeout=2)
             if resp.status_code == 200:
                 data = resp.json()
                 return data.get('serverUrl', default_url)
@@ -52,7 +52,7 @@ class SystemManager(Node):
         self.declare_parameter('nav_package', 'jetson_node_pkg')
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
         self.declare_parameter('nav2_params_file', '/home/nvidia/ros2_ws/my_nav2_params.yaml')
-        self.declare_parameter('server_url', 'http://192.168.1.100:4000')
+        self.declare_parameter('server_url', 'http://192.168.1.100:4001')
 
         self.maps_dir = self.get_parameter('maps_dir').value
         self.slam_package = self.get_parameter('slam_package').value

@@ -56,12 +56,13 @@ export function MapCanvas({
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
 
-  // Load static map data when in navigation mode with selected map
+  // Navigation mode: load static map from server when selected
   const [staticMapData, setStaticMapData] = useState<MapData | null>(null);
 
+  // Load static map from server when in navigation mode with selected map
   useEffect(() => {
-    if (useStaticMap && selectedMap) {
-      fetch(`http://localhost:4000/api/maps/${selectedMap}/data`)
+    if (mode === 'navigation' && selectedMap) {
+      fetch(`http://localhost:4001/api/maps/${selectedMap}/data`)
         .then(res => res.json())
         .then(data => {
           if (!data.error) {
@@ -72,7 +73,7 @@ export function MapCanvas({
     } else {
       setStaticMapData(null);
     }
-  }, [useStaticMap, selectedMap]);
+  }, [mode, selectedMap]);
 
   // Combine TF pose with map-derived pose
   const actualPose = tfPose || robotPose;
@@ -160,11 +161,12 @@ export function MapCanvas({
           const idx = y * mapWidth + x;
           const value = data[idx];
 
-          // Calculate screen position
+          // Calculate screen position (Y axis flip differs between static and dynamic maps)
           const worldX = originX + x * resolution;
           const worldY = originY + y * resolution;
-          const screenX = centerX + worldX * cellSize;
-          const screenY = centerY + worldY * cellSize;
+          const screenX = centerX - worldX * cellSize;
+          // Static map: flip Y, Dynamic map: don't flip
+          const screenY = isStaticMap ? centerY - worldY * cellSize : centerY + worldY * cellSize;
 
           // Skip if outside canvas (with margin for cell size)
           const margin = cellPixelSize;
@@ -196,8 +198,8 @@ export function MapCanvas({
 
     // Draw robot pose if available
     if (displayPose && layers.tf) {
-      const robotScreenX = centerX + displayPose.x * cellSize;
-      const robotScreenY = centerY - displayPose.y * cellSize;
+      const robotScreenX = centerX - displayPose.x * cellSize;
+      const robotScreenY = centerY + displayPose.y * cellSize;
 
       // Robot body (circle)
       ctx.fillStyle = '#22c55e';
@@ -210,18 +212,18 @@ export function MapCanvas({
       ctx.lineWidth = 3;
       ctx.beginPath();
       const arrowLength = 15;
-      const arrowAngle = displayPose.theta;
+      const arrowAngle = -displayPose.theta;
       ctx.moveTo(robotScreenX, robotScreenY);
       ctx.lineTo(
-        robotScreenX + Math.cos(-arrowAngle) * arrowLength,
-        robotScreenY + Math.sin(-arrowAngle) * arrowLength
+        robotScreenX + Math.cos(arrowAngle) * arrowLength,
+        robotScreenY + Math.sin(arrowAngle) * arrowLength
       );
       ctx.stroke();
 
       // Robot frame label
       ctx.fillStyle = '#22c55e';
       ctx.font = '12px sans-serif';
-      ctx.fillText('body', robotScreenX + 12, robotScreenY - 12);
+      ctx.fillText('base_link', robotScreenX + 12, robotScreenY - 12);
     }
 
     // Draw global path (purple)
@@ -249,7 +251,7 @@ export function MapCanvas({
       ctx.beginPath();
       for (let i = 0; i < localPath.points.length; i++) {
         const point = localPath.points[i];
-        const screenX = centerX + point.x * cellSize;
+        const screenX = centerX - point.x * cellSize;
         const screenY = centerY + point.y * cellSize;
         if (i === 0) {
           ctx.moveTo(screenX, screenY);
@@ -303,7 +305,7 @@ export function MapCanvas({
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // In navigation mode, click publishes goal or initial pose based on navClickMode
-    if (mode === 'navigation' && mapData && displayMapData && navClickMode !== 'none') {
+    if (mode === 'navigation' && displayMapData && navClickMode !== 'none') {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -320,14 +322,16 @@ export function MapCanvas({
       const centerX = view.offsetX;
       const centerY = view.offsetY;
 
-      // Convert screen coordinates to world coordinates
+      // Convert screen coordinates to world coordinates (flip Y for static map)
       const worldX = (clickX - centerX) / cellSize - originX;
-      const worldY = (clickY - centerY) / cellSize - originY;
+      const worldY = isStaticMap ? (centerY - clickY) / cellSize - originY : (clickY - centerY) / cellSize - originY;
 
       // Publish based on click mode
+      console.log('[MapCanvas] navClickMode:', navClickMode, 'worldX:', worldX, 'worldY:', worldY, 'isStaticMap:', isStaticMap);
       if (navClickMode === 'goal') {
         publishGoal(worldX, worldY, 0);
       } else if (navClickMode === 'initial_pose') {
+        console.log('[MapCanvas] calling publishInitialPose', worldX, worldY);
         publishInitialPose(worldX, worldY, 0);
       }
 

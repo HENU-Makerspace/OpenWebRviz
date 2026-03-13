@@ -35,7 +35,7 @@ app.get('/api/health', (c) => {
 // Get config for Jetson
 app.get('/api/config', (c) => {
   return c.json({
-    serverUrl: `http://${c.req.header('host')?.split(':')[0] || 'localhost'}:4000`,
+    serverUrl: `http://${c.req.header('host')?.split(':')[0] || 'localhost'}:4001`,
   });
 });
 
@@ -708,7 +708,7 @@ app.post('/api/broadcast', async (c) => {
   return c.json({ status: 'acknowledged', port });
 });
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4001;
 
 console.log(`Server running on http://localhost:${PORT}`);
 

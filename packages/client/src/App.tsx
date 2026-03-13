@@ -165,10 +165,15 @@ function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelect
   }, [fetchMaps]);
 
   const startNavigation = async () => {
-    if (!selectedMap) return;
+    console.log('[StartNav] clicked, selectedMap:', selectedMap, 'isNavRunning:', isNavRunning);
+    if (!selectedMap) {
+      console.log('[StartNav] no map selected, returning');
+      return;
+    }
     setStarting(true);
     // 传递 Jetson 上的地图路径
-    const mapYamlPath = `/home/nvidia/maps/${selectedMap}`;
+    const mapYamlPath = `/home/nvidia/maps/${selectedMap}.yaml`;
+    console.log('[StartNav] calling startNav with:', mapYamlPath);
     await startNav(mapYamlPath);
     setStarting(false);
   };

@@ -25,7 +25,7 @@ navigation:
 # 前端配置
 frontend:
   ws_url: "ws://192.168.1.58:9090"
-  api_url: "http://192.168.1.58:4000"
+  api_url: "http://192.168.1.58:4001"
 
 # 话题配置
 topics:

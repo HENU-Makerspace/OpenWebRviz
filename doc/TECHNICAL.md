@@ -102,7 +102,7 @@ start_webbot_viz.sh    # 机器人启动脚本
 ```bash
 cd packages/server
 bun run start
-# http://localhost:4000
+# http://localhost:4001
 ```
 
 ### 2. 启动前端
@@ -121,7 +121,7 @@ tmux new -s webbot_viz -d "bash /path/to/start_webbot_viz.sh"
 ### 4. 停止
 ```bash
 # 停止 TMUX
-curl -X POST http://localhost:4000/api/slam/stop-tmux
+curl -X POST http://localhost:4001/api/slam/stop-tmux
 # 或在 UI 点击 "Stop SLAM"
 ```
 
@@ -154,16 +154,16 @@ cd packages/server && bun run start
 cd packages/client && bunx vite preview --port 3000
 
 # 启动 ROS 仿真（TMUX）
-curl -X POST http://localhost:4000/api/slam/start-tmux -H "Content-Type: application/json" -d '{}'
+curl -X POST http://localhost:4001/api/slam/start-tmux -H "Content-Type: application/json" -d '{}'
 
 # 停止 ROS 仿真
-curl -X POST http://localhost:4000/api/slam/stop-tmux
+curl -X POST http://localhost:4001/api/slam/stop-tmux
 
 # 保存地图
-curl -X POST http://localhost:4000/api/maps/save -H "Content-Type: application/json" -d '{"name": "my_map"}'
+curl -X POST http://localhost:4001/api/maps/save -H "Content-Type: application/json" -d '{"name": "my_map"}'
 
 # 查看地图列表
-curl http://localhost:4000/api/maps
+curl http://localhost:4001/api/maps
 ```
 
 ## 已知问题
