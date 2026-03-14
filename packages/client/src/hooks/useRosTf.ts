@@ -39,13 +39,13 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
       const commonFrames = ['base_link', 'base_footprint', 'robot_base', 'base', 'body'];
 
       for (const transform of tfMsg.transforms) {
+        const parentFrameId = transform.header.frame_id;
         const childFrameId = transform.child_frame_id;
 
-        if (commonFrames.includes(childFrameId)) {
+        if (parentFrameId === 'camera_init' && commonFrames.includes(childFrameId)) {
           const translation = transform.transform.translation;
           const rotation = transform.transform.rotation;
 
-          // Convert quaternion to theta
           const siny_cosp = 2 * (rotation.w * rotation.z + rotation.x * rotation.y);
           const cosy_cosp = 1 - 2 * (rotation.y * rotation.y + rotation.z * rotation.z);
           const theta = Math.atan2(siny_cosp, cosy_cosp);
@@ -54,7 +54,7 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
             x: translation.x,
             y: translation.y,
             theta,
-            frameId: childFrameId,
+            frameId: `${parentFrameId}->${childFrameId}`,
           });
           break;
         }

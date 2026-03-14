@@ -42,61 +42,45 @@ export function MapCanvas({
   const tfPaused = isPaused || !layers.tf;
   const pathPaused = isPaused || (!layers.globalPlan && !layers.localPlan);
 
-  const useStaticMap = mode === 'navigation' && !!selectedMap;
-
-  const { mapData, robotPose } = useRosMap(
-    ros,
-    useStaticMap ? null : mapTopic,
-    mapPaused
-  );
+  // 始终订阅 /map，不再使用本地静态地图文件
+  const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused);
   const { robotPose: tfPose } = useRosTfTree(ros, tfPaused);
   const { globalPath, localPath } = useRosPath(ros, '/plan', '/local_plan', pathPaused);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
 
-  const [staticMapData, setStaticMapData] = useState<MapData | null>(null);
+  const actualPose = tfPose || robotPose;
+
+  const [frozenNavMap, setFrozenNavMap] = useState<MapData | null>(null);
   const [displayMapData, setDisplayMapData] = useState<MapData | null>(null);
   const [displayPose, setDisplayPose] = useState<{ x: number; y: number; theta: number } | null>(null);
-  const [isStaticMap, setIsStaticMap] = useState(false);
 
+  // 进入导航模式后，锁定第一次收到的 /map
   useEffect(() => {
-    if (mode === 'navigation' && selectedMap) {
-      fetch(`http://localhost:4001/api/maps/${selectedMap}/data`)
-        .then(res => res.json())
-        .then(data => {
-          if (!data.error) {
-            setStaticMapData(data);
-          }
-        })
-        .catch(err => console.error('Failed to load static map:', err));
-    } else {
-      setStaticMapData(null);
+    if (mode !== 'navigation') {
+      setFrozenNavMap(null);
+      return;
     }
-  }, [mode, selectedMap]);
 
-  const actualPose = tfPose || robotPose;
+    if (!frozenNavMap && mapData) {
+      setFrozenNavMap(mapData);
+    }
+  }, [mode, mapData, frozenNavMap]);
 
   useEffect(() => {
     const { paused } = subscriptionSettings;
     if (!paused) {
-      if (staticMapData) {
-        setDisplayMapData(staticMapData);
-        setIsStaticMap(true);
+      if (mode === 'navigation' && frozenNavMap) {
+        setDisplayMapData(frozenNavMap);
       } else if (mapData) {
         setDisplayMapData(mapData);
-        setIsStaticMap(false);
       }
 
       if (actualPose) {
-        const correctedPose = normalizeStaticNavPoint(actualPose.x, actualPose.y);
-        setDisplayPose({
-          x: correctedPose.x,
-          y: correctedPose.y,
-          theta: actualPose.theta,
-        });
+        setDisplayPose(actualPose);
       }
     }
-  }, [mapData, staticMapData, actualPose, subscriptionSettings.paused]);
+  }, [mode, mapData, frozenNavMap, actualPose, subscriptionSettings.paused]);
 
   useEffect(() => {
     const updateSize = () => {
@@ -111,75 +95,28 @@ export function MapCanvas({
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  /**
-   * 统一坐标变换：
-   *
-   * 静态地图（navigation）：
-   *   X 向右增加，Y 向上增加 -> screenY 需要取反
-   *
-   * 动态地图（mapping）：
-   *   保持你原来“建图没 bug”的表现：
-   *   X 仍然沿用原来的反向，Y 仍然沿用原来的正向
-   *
-   * 重点不是哪套“物理上最优雅”，而是整个文件必须只用一套。
-   */
-const worldToScreen = useCallback(
-  (x: number, y: number) => {
-    const scale = view.scale;
-
-    if (isStaticMap) {
+  // 统一使用一套坐标变换，不再区分静态图/动态图
+  const worldToScreen = useCallback(
+    (x: number, y: number) => {
+      const scale = view.scale;
       return {
-        x: view.offsetX + x * scale,
-        y: view.offsetY - y * scale,
+        x: view.offsetX - x * scale,
+        y: view.offsetY + y * scale,
       };
-    }
+    },
+    [view.offsetX, view.offsetY, view.scale]
+  );
 
-    return {
-      x: view.offsetX - x * scale,
-      y: view.offsetY + y * scale,
-    };
-  },
-  [view.offsetX, view.offsetY, view.scale, isStaticMap]
-);
-
-const screenToWorld = useCallback(
-  (screenX: number, screenY: number) => {
-    const scale = view.scale;
-
-    if (isStaticMap) {
+  const screenToWorld = useCallback(
+    (screenX: number, screenY: number) => {
+      const scale = view.scale;
       return {
-        x: (screenX - view.offsetX) / scale,
-        y: (view.offsetY - screenY) / scale,
+        x: (view.offsetX - screenX) / scale,
+        y: (screenY - view.offsetY) / scale,
       };
-    }
-
-    return {
-      x: (view.offsetX - screenX) / scale,
-      y: (screenY - view.offsetY) / scale,
-    };
-  },
-  [view.offsetX, view.offsetY, view.scale, isStaticMap]
-);
-
-const normalizeStaticNavPoint = useCallback(
-  (x: number, y: number) => {
-    if (!isStaticMap) {
-      return { x, y };
-    }
-    return { x: y, y: x };
-  },
-  [isStaticMap]
-);
-
-const denormalizeStaticNavPoint = useCallback(
-  (x: number, y: number) => {
-    if (!isStaticMap) {
-      return { x, y };
-    }
-    return { x: y, y: x };
-  },
-  [isStaticMap]
-);
+    },
+    [view.offsetX, view.offsetY, view.scale]
+  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -221,7 +158,6 @@ const denormalizeStaticNavPoint = useCallback(
 
           const worldX = originX + x * resolution;
           const worldY = originY + y * resolution;
-
           const { x: screenX, y: screenY } = worldToScreen(worldX, worldY);
 
           const margin = cellPixelSize;
@@ -234,27 +170,19 @@ const denormalizeStaticNavPoint = useCallback(
             continue;
           }
 
-          const freeThreshold = isStaticMap ? 15 : 30;
           let color: string;
-
           if (value === -1) {
             color = '#b0b0b0';
           } else if (value >= 65) {
             color = '#1e1e1e';
-          } else if (value <= freeThreshold) {
+          } else if (value <= 30) {
             color = '#f0f0f0';
           } else {
             color = '#b0b0b0';
           }
 
           ctx.fillStyle = color;
-
-          if (isStaticMap) {
-            // 静态图时 worldToScreen 给的是“世界点”，canvas 的 fillRect 以左上角为锚点
-            ctx.fillRect(screenX, screenY - cellPixelSize, cellPixelSize, cellPixelSize);
-          } else {
-            ctx.fillRect(screenX, screenY, cellPixelSize, cellPixelSize);
-          }
+          ctx.fillRect(screenX, screenY, cellPixelSize, cellPixelSize);
         }
       }
     }
@@ -272,16 +200,12 @@ const denormalizeStaticNavPoint = useCallback(
       ctx.beginPath();
 
       const arrowLength = 15;
-      const cosT = Math.cos(displayPose.theta);
-      const sinT = Math.sin(displayPose.theta);
-
-      const dirX = isStaticMap ? cosT : -cosT;
-      const dirY = isStaticMap ? -sinT : sinT;
+      const arrowAngle = -displayPose.theta;
 
       ctx.moveTo(robotScreenX, robotScreenY);
       ctx.lineTo(
-        robotScreenX + dirX * arrowLength,
-        robotScreenY + dirY * arrowLength
+        robotScreenX + Math.cos(arrowAngle) * arrowLength,
+        robotScreenY + Math.sin(arrowAngle) * arrowLength
       );
       ctx.stroke();
 
@@ -297,8 +221,7 @@ const denormalizeStaticNavPoint = useCallback(
 
       for (let i = 0; i < globalPath.points.length; i++) {
         const point = globalPath.points[i];
-        const correctedPoint = normalizeStaticNavPoint(point.x, point.y);
-        const { x, y } = worldToScreen(correctedPoint.x, correctedPoint.y);
+        const { x, y } = worldToScreen(point.x, point.y);
 
         if (i === 0) {
           ctx.moveTo(x, y);
@@ -349,7 +272,6 @@ const denormalizeStaticNavPoint = useCallback(
     displayPose,
     globalPath,
     isConnected,
-    isStaticMap,
     layers.globalPlan,
     layers.localPlan,
     layers.map,
@@ -378,7 +300,6 @@ const denormalizeStaticNavPoint = useCallback(
     layers.localPlan,
     globalPath,
     localPath,
-    isStaticMap,
   ]);
 
   useEffect(() => {
@@ -412,18 +333,13 @@ const denormalizeStaticNavPoint = useCallback(
         'worldX:',
         worldX,
         'worldY:',
-        worldY,
-        'isStaticMap:',
-        isStaticMap
+        worldY
       );
 
-      const { x: rawWorldX, y: rawWorldY } = screenToWorld(clickX, clickY);
-      const correctedWorld = denormalizeStaticNavPoint(rawWorldX, rawWorldY);
-
       if (navClickMode === 'goal') {
-        publishGoal(correctedWorld.x, correctedWorld.y, 0);
+        publishGoal(worldX, worldY, 0);
       } else if (navClickMode === 'initial_pose') {
-        publishInitialPose(correctedWorld.x, correctedWorld.y, 0);
+        publishInitialPose(worldX, worldY, 0);
       }
 
       setNavClickMode?.('none');
@@ -454,7 +370,6 @@ const denormalizeStaticNavPoint = useCallback(
     displayMapData,
     navClickMode,
     screenToWorld,
-    isStaticMap,
     publishGoal,
     publishInitialPose,
     setNavClickMode,
@@ -482,7 +397,7 @@ const denormalizeStaticNavPoint = useCallback(
           <div>Resolution: {overlayMap.info.resolution.toFixed(3)} m/cell</div>
           <div>Size: {overlayMap.info.width} x {overlayMap.info.height}</div>
           <div>Scale: {view.scale.toFixed(1)} px/m</div>
-          <div>Mode: {isStaticMap ? 'Static map' : 'ROS map'}</div>
+          <div>Mode: {mode === 'navigation' ? 'Frozen first /map' : 'Live /map'}</div>
         </div>
       )}
 
