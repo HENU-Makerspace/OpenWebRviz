@@ -88,7 +88,12 @@ export function MapCanvas({
       }
 
       if (actualPose) {
-        setDisplayPose(actualPose);
+        const correctedPose = normalizeStaticNavPoint(actualPose.x, actualPose.y);
+        setDisplayPose({
+          x: correctedPose.x,
+          y: correctedPose.y,
+          theta: actualPose.theta,
+        });
       }
     }
   }, [mapData, staticMapData, actualPose, subscriptionSettings.paused]);
@@ -118,43 +123,63 @@ export function MapCanvas({
    *
    * 重点不是哪套“物理上最优雅”，而是整个文件必须只用一套。
    */
-  const worldToScreen = useCallback(
-    (x: number, y: number) => {
-      const scale = view.scale;
+const worldToScreen = useCallback(
+  (x: number, y: number) => {
+    const scale = view.scale;
 
-      if (isStaticMap) {
-        return {
-          x: view.offsetX + x * scale,
-          y: view.offsetY - y * scale,
-        };
-      }
-
+    if (isStaticMap) {
       return {
-        x: view.offsetX - x * scale,
-        y: view.offsetY + y * scale,
+        x: view.offsetX + x * scale,
+        y: view.offsetY - y * scale,
       };
-    },
-    [view.offsetX, view.offsetY, view.scale, isStaticMap]
-  );
+    }
 
-  const screenToWorld = useCallback(
-    (screenX: number, screenY: number) => {
-      const scale = view.scale;
+    return {
+      x: view.offsetX - x * scale,
+      y: view.offsetY + y * scale,
+    };
+  },
+  [view.offsetX, view.offsetY, view.scale, isStaticMap]
+);
 
-      if (isStaticMap) {
-        return {
-          x: (screenX - view.offsetX) / scale,
-          y: (view.offsetY - screenY) / scale,
-        };
-      }
+const screenToWorld = useCallback(
+  (screenX: number, screenY: number) => {
+    const scale = view.scale;
 
+    if (isStaticMap) {
       return {
-        x: (view.offsetX - screenX) / scale,
-        y: (screenY - view.offsetY) / scale,
+        x: (screenX - view.offsetX) / scale,
+        y: (view.offsetY - screenY) / scale,
       };
-    },
-    [view.offsetX, view.offsetY, view.scale, isStaticMap]
-  );
+    }
+
+    return {
+      x: (view.offsetX - screenX) / scale,
+      y: (screenY - view.offsetY) / scale,
+    };
+  },
+  [view.offsetX, view.offsetY, view.scale, isStaticMap]
+);
+
+const normalizeStaticNavPoint = useCallback(
+  (x: number, y: number) => {
+    if (!isStaticMap) {
+      return { x, y };
+    }
+    return { x: y, y: x };
+  },
+  [isStaticMap]
+);
+
+const denormalizeStaticNavPoint = useCallback(
+  (x: number, y: number) => {
+    if (!isStaticMap) {
+      return { x, y };
+    }
+    return { x: y, y: x };
+  },
+  [isStaticMap]
+);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -272,7 +297,8 @@ export function MapCanvas({
 
       for (let i = 0; i < globalPath.points.length; i++) {
         const point = globalPath.points[i];
-        const { x, y } = worldToScreen(point.x, point.y);
+        const correctedPoint = normalizeStaticNavPoint(point.x, point.y);
+        const { x, y } = worldToScreen(correctedPoint.x, correctedPoint.y);
 
         if (i === 0) {
           ctx.moveTo(x, y);
@@ -391,10 +417,13 @@ export function MapCanvas({
         isStaticMap
       );
 
+      const { x: rawWorldX, y: rawWorldY } = screenToWorld(clickX, clickY);
+      const correctedWorld = denormalizeStaticNavPoint(rawWorldX, rawWorldY);
+
       if (navClickMode === 'goal') {
-        publishGoal(worldX, worldY, 0);
+        publishGoal(correctedWorld.x, correctedWorld.y, 0);
       } else if (navClickMode === 'initial_pose') {
-        publishInitialPose(worldX, worldY, 0);
+        publishInitialPose(correctedWorld.x, correctedWorld.y, 0);
       }
 
       setNavClickMode?.('none');
