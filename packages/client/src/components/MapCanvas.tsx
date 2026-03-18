@@ -5,6 +5,7 @@ import { useRosTfTree } from '../hooks/useRosTf';
 import { useRosPath, useGoalPublisher, useInitialPosePublisher } from '../hooks/useRosPath';
 import { useLayers } from './LayerControl';
 import { useMode } from '../hooks/useMode';
+import { useRosScan } from '../hooks/useRosScan';
 
 interface MapCanvasProps {
   ros: ROSLIB.Ros | null;
@@ -61,7 +62,9 @@ export function MapCanvas({
   const [frozenNavMap, setFrozenNavMap] = useState<MapData | null>(null);
   const [displayMapData, setDisplayMapData] = useState<MapData | null>(null);
   const [displayPose, setDisplayPose] = useState<{ x: number; y: number; theta: number } | null>(null);
-
+  
+  const scanPaused = isPaused || !layers.scan;
+  const { scanData } = useRosScan(ros, '/scan', scanPaused);
   // 进入导航模式后，锁定第一次收到的 /map
   useEffect(() => {
     if (mode !== 'navigation') {
@@ -264,7 +267,50 @@ export function MapCanvas({
 
       ctx.stroke();
     }
+    if (scanData && displayPose) {
+      ctx.fillStyle = '#38bdf8';
 
+      const robotYaw = displayPose.theta;
+      const cosYaw = Math.cos(robotYaw);
+      const sinYaw = Math.sin(robotYaw);
+
+      for (let i = 0; i < scanData.ranges.length; i++) {
+        const range = scanData.ranges[i];
+
+        if (
+          !Number.isFinite(range) ||
+          range < scanData.rangeMin ||
+          range > scanData.rangeMax
+        ) {
+          continue;
+        }
+
+        const angle = scanData.angleMin + i * scanData.angleIncrement;
+
+        // 激光点在雷达/机器人局部坐标系下
+        const localX = range * Math.cos(angle);
+        const localY = range * Math.sin(angle);
+
+        // 变换到地图坐标系
+        const worldX = displayPose.x + cosYaw * localX - sinYaw * localY;
+        const worldY = displayPose.y + sinYaw * localX + cosYaw * localY;
+
+        const { x: screenX, y: screenY } = worldToScreen(worldX, worldY);
+
+        if (
+          screenX < 0 ||
+          screenX >= width ||
+          screenY < 0 ||
+          screenY >= height
+        ) {
+          continue;
+        }
+
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     if (layers.map) {
       const { x: originMarkerX, y: originMarkerY } = worldToScreen(
         info.origin.position.x,
@@ -340,6 +386,7 @@ export function MapCanvas({
     view.scale,
     worldToScreen,
     navDrag,
+    scanData,
   ]);
 
   const drawRef = useRef(draw);
@@ -361,7 +408,8 @@ export function MapCanvas({
     layers.localPlan,
     globalPath,
     localPath,
-    navDrag
+    navDrag,
+    scanData,
   ]);
 
   useEffect(() => {

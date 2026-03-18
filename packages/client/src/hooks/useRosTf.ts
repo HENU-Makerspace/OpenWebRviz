@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as ROSLIB from 'roslib';
 
 export interface RobotPose {
@@ -44,13 +44,16 @@ function compose2D(
   };
 }
 
-// Simple TF listener - compose TF chain manually from /tf
 export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
+
+  // 关键：缓存最近收到的 TF 边
+  const tfCacheRef = useRef<Map<string, TfTransform>>(new Map());
 
   useEffect(() => {
     if (!ros) {
       setRobotPose(null);
+      tfCacheRef.current.clear();
       return;
     }
 
@@ -60,22 +63,28 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
       messageType: 'tf2_msgs/msg/TFMessage',
     });
 
+    const makeKey = (parent: string, child: string) => `${parent}->${child}`;
+
     tfSub.subscribe((message: unknown) => {
       if (paused) return;
 
       const tfMsg = message as { transforms: TfTransform[] };
       if (!tfMsg.transforms || tfMsg.transforms.length === 0) return;
 
-      const findTf = (parent: string, child: string) =>
-        tfMsg.transforms.find(
-          t => t.header.frame_id === parent && t.child_frame_id === child
-        );
+      // 更新缓存
+      for (const tf of tfMsg.transforms) {
+        const key = makeKey(tf.header.frame_id, tf.child_frame_id);
+        tfCacheRef.current.set(key, tf);
+      }
 
-      const mapToCameraInit = findTf('map', 'camera_init');
-      const cameraInitToBody = findTf('camera_init', 'body');
-      const bodyToBaseLink = findTf('body', 'base_link');
+      const getTf = (parent: string, child: string) =>
+        tfCacheRef.current.get(makeKey(parent, child));
 
-      // 先优先求 map -> body
+      const mapToCameraInit = getTf('map', 'camera_init');
+      const cameraInitToBody = getTf('camera_init', 'body');
+      const bodyToBaseLink = getTf('body', 'base_link');
+
+      // 优先合成 map -> body / map -> base_link
       if (mapToCameraInit && cameraInitToBody) {
         const a = {
           x: mapToCameraInit.transform.translation.x,
@@ -91,7 +100,6 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
 
         const mapToBody = compose2D(a, b);
 
-        // 如果还存在 body -> base_link，则进一步合成 map -> base_link
         if (bodyToBaseLink) {
           const c = {
             x: bodyToBaseLink.transform.translation.x,
@@ -119,16 +127,12 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
         return;
       }
 
-      // 回退：如果没有 map->camera_init，但有 camera_init->body，至少还能显示 SLAM 局部位姿
+      // 没有 map->camera_init 时，退回到局部 pose
       if (cameraInitToBody) {
-        const translation = cameraInitToBody.transform.translation;
-        const rotation = cameraInitToBody.transform.rotation;
-        const theta = quatToYaw(rotation);
-
         setRobotPose({
-          x: translation.x,
-          y: translation.y,
-          theta,
+          x: cameraInitToBody.transform.translation.x,
+          y: cameraInitToBody.transform.translation.y,
+          theta: quatToYaw(cameraInitToBody.transform.rotation),
           frameId: 'camera_init->body',
         });
       }
@@ -137,55 +141,9 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
     return () => {
       tfSub.unsubscribe();
       setRobotPose(null);
+      tfCacheRef.current.clear();
     };
   }, [ros, paused]);
 
   return { robotPose };
-}
-
-// Simple TF listener for single frame transform (alternative API)
-export function useRosTf(
-  ros: ROSLIB.Ros | null,
-  targetFrame: string = 'map',
-  sourceFrame: string = 'base_link',
-  paused: boolean = false
-) {
-  const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
-
-  useEffect(() => {
-    if (!ros) {
-      setRobotPose(null);
-      return;
-    }
-
-    const tfClient = new ROSLIB.TFClient({
-      ros,
-      fixedFrame: targetFrame,
-      angularThres: 0.01,
-      transThres: 0.01,
-    });
-
-    tfClient.subscribe(sourceFrame, (transform) => {
-      if (paused) return;
-      if (transform) {
-        const siny_cosp = 2 * (transform.rotation.w * transform.rotation.z + transform.rotation.x * transform.rotation.y);
-        const cosy_cosp = 1 - 2 * (transform.rotation.y * transform.rotation.y + transform.rotation.z * transform.rotation.z);
-        const theta = Math.atan2(siny_cosp, cosy_cosp);
-
-        setRobotPose({
-          x: transform.translation.x,
-          y: transform.translation.y,
-          theta,
-          frameId: sourceFrame,
-        });
-      }
-    });
-
-    return () => {
-      tfClient.unsubscribe(sourceFrame);
-      setRobotPose(null);
-    };
-  }, [ros, targetFrame, sourceFrame, paused]);
-
-  return robotPose;
 }

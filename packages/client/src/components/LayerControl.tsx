@@ -6,6 +6,7 @@ interface LayerState {
   globalPlan: boolean;
   localPlan: boolean;
   image: boolean;
+  scan: boolean;
 }
 
 interface SubscriptionSettings {
@@ -37,9 +38,10 @@ export function LayerControlProvider({ children }: { children: React.ReactNode }
   const [layers, setLayers] = useState<LayerState>({
     map: true,
     tf: true,
-    globalPlan: false,
+    globalPlan: true,
     localPlan: false,
     image: false,
+    scan: false,
   });
 
   const [subscriptionSettings, setSubscriptionSettings] = useState<SubscriptionSettings>({
@@ -90,6 +92,7 @@ export function LayerControl() {
   const layersConfig = [
     { key: 'map' as const, label: 'Map', color: 'bg-blue-500' },
     { key: 'tf' as const, label: 'Robot (TF)', color: 'bg-green-500' },
+    { key: 'scan' as const, label: 'Laser Scan', color: 'bg-cyan-500' },
     { key: 'globalPlan' as const, label: 'Global Plan', color: 'bg-purple-500' },
     { key: 'localPlan' as const, label: 'Local Plan', color: 'bg-yellow-500' },
     { key: 'image' as const, label: 'Camera Image', color: 'bg-pink-500' },
