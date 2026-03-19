@@ -12,10 +12,63 @@ const MAPS_DIR = path.join(process.cwd(), 'maps');
 const SLAM_PROCESS_FILE = path.join(process.cwd(), '.slam_pid');
 const ROSBRIDGE_PROCESS_FILE = path.join(process.cwd(), '.rosbridge_pid');
 
+// Config file path
+const CONFIG_PATH = path.join(process.cwd(), 'config', 'robot_config.yaml');
+
+// Simple YAML config parser
+function parseYamlConfig(filePath: string) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const config: Record<string, any> = {};
+
+    // Simple line-by-line parsing for flat YAML structure
+    const lines = content.split('\n');
+    let currentSection = '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+
+      // Skip empty lines and comments
+      if (!trimmed || trimmed.startsWith('#')) continue;
+
+      // Section header (no colon or colon at end)
+      if (trimmed.endsWith(':') && !trimmed.includes('"') && !trimmed.includes("'")) {
+        currentSection = trimmed.replace(':', '').trim();
+        config[currentSection] = {};
+        continue;
+      }
+
+      // Key-value pair
+      const match = trimmed.match(/^(\w+):\s*(.+)$/);
+      if (match && currentSection) {
+        let value = match[2].trim().replace(/^["']|["']$/g, '');
+        // Try to parse as number (skip if contains dot, e.g. IP addresses)
+        const num = parseFloat(value);
+        config[currentSection][match[1]] = (isNaN(num) || value.includes('.')) ? value : num;
+      }
+    }
+
+    return config;
+  } catch (e) {
+    console.error('Failed to parse config:', e);
+    return null;
+  }
+}
+
+// Load config
+const config = parseYamlConfig(CONFIG_PATH);
+
+// Server configuration
+const SERVER_HOST = config?.server?.host || process.env.SERVER_HOST || '192.168.1.100';
+const SERVER_PORT = config?.server?.port || process.env.SERVER_PORT || 4001;
+
 // Jetson configuration
-const JETSON_HOST = process.env.JETSON_HOST || '192.168.1.58';
-const JETSON_USER = process.env.JETSON_USER || 'nvidia';
-const JETSON_MAPS_DIR = '/home/nvidia/maps';
+const JETSON_HOST = config?.jetson?.host || process.env.JETSON_HOST || '192.168.1.58';
+const JETSON_USER = config?.jetson?.user || process.env.JETSON_USER || 'nvidia';
+const JETSON_MAPS_DIR = config?.jetson?.maps_dir || '/home/nvidia/maps';
+const JETSON_ROSBRIDGE_PORT = config?.jetson?.rosbridge_port || 9090;
+
+console.log('[Config] Loaded config:', { SERVER_HOST, JETSON_HOST, JETSON_ROSBRIDGE_PORT });
 
 // Ensure maps directory exists
 if (!fs.existsSync(MAPS_DIR)) {
@@ -32,10 +85,12 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Get config for Jetson
+// Get config for Jetson and frontend
 app.get('/api/config', (c) => {
   return c.json({
-    serverUrl: `http://${c.req.header('host')?.split(':')[0] || 'localhost'}:4001`,
+    serverUrl: `http://${SERVER_HOST}:${SERVER_PORT}`,
+    jetsonHost: JETSON_HOST,
+    jetsonRosbridgePort: JETSON_ROSBRIDGE_PORT,
   });
 });
 

@@ -10,10 +10,29 @@ import { ModeProvider, useMode } from './hooks/useMode';
 import { useSlamControl, useMapManager, useNetworkInfo } from './hooks/useSlamControl';
 import { useSystemManager } from './hooks/useSystemManager';
 
-function RosbridgePanel() {
+interface ServerConfig {
+  serverUrl: string;
+  jetsonHost: string;
+  jetsonRosbridgePort: number;
+}
+
+function useServerConfig() {
+  const [config, setConfig] = useState<ServerConfig | null>(null);
+
+  useEffect(() => {
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => setConfig(data))
+      .catch(err => console.error('Failed to fetch config:', err));
+  }, []);
+
+  return config;
+}
+
+function RosbridgePanel({ wsUrl }: { wsUrl: string }) {
   // Use WebSocket connection status to determine if rosbridge is running
   // (rosbridge runs on Jetson, so we check if we can connect via WebSocket)
-  const { isConnected, reconnect, disconnect } = useRosConnection('ws://192.168.1.58:9090');
+  const { isConnected, reconnect, disconnect } = useRosConnection(wsUrl);
 
   return (
     <div className="space-y-2">
@@ -44,8 +63,8 @@ function RosbridgePanel() {
   );
 }
 
-function MappingPanel() {
-  const { ros, isConnected } = useRosConnection('ws://192.168.1.58:9090');
+function MappingPanel({ wsUrl }: { wsUrl: string }) {
+  const { ros, isConnected } = useRosConnection(wsUrl);
   const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
   const { maps, fetchMaps, loading: mapsLoading, saveMap: saveMapToServer } = useMapManager();
   const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
@@ -150,12 +169,12 @@ interface NavigationPanelProps {
   setSelectedMap: (map: string | null) => void;
 }
 
-function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelectedMap }: NavigationPanelProps) {
+function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelectedMap, wsUrl }: NavigationPanelProps & { wsUrl: string }) {
   const { maps, fetchMaps, loading } = useMapManager();
   const [starting, setStarting] = useState(false);
 
   // Use system manager for robot control
-  const { ros, isConnected } = useRosConnection('ws://192.168.1.58:9090');
+  const { ros, isConnected } = useRosConnection(wsUrl);
   const { status: robotStatus, startNavigation: startNav, stopAll } = useSystemManager(ros, isConnected);
 
   const isNavRunning = robotStatus.mode === 'navigation';
@@ -280,7 +299,9 @@ function NetworkPanel() {
 
 function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
-  const { ros, isConnected } = useRosConnection('ws://192.168.1.58:9090');
+  const config = useServerConfig();
+  const wsUrl = config ? `ws://${config.jetsonHost}:${config.jetsonRosbridgePort}` : '';
+  const { ros, isConnected } = useRosConnection(wsUrl);
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();
   const [navClickMode, setNavClickMode] = useState<'none' | 'initial_pose' | 'goal'>('none');
@@ -342,20 +363,21 @@ function AppContent() {
             {showDebug ? 'Hide Debug' : 'Show Debug'}
           </button>
         </div>
-        <ConnectionStatus wsUrl="ws://192.168.1.58:9090" />
+        <ConnectionStatus wsUrl={wsUrl} />
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-64 bg-white border-r p-4 overflow-y-auto space-y-6">
-          <RosbridgePanel />
+          <RosbridgePanel wsUrl={wsUrl} />
           {mode === 'teleop' ? (
-            <MappingPanel />
+            <MappingPanel wsUrl={wsUrl} />
           ) : (
             <NavigationPanel
               navClickMode={navClickMode}
               setNavClickMode={setNavClickMode}
               selectedMap={selectedMap}
               setSelectedMap={setSelectedMap}
+              wsUrl={wsUrl}
             />
           )}
           <LayerControl />

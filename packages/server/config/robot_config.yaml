@@ -1,26 +1,20 @@
-# Jetson 机器人配置文件
+# 机器人与服务器配置文件
+# 服务器配置
+server:
+  host: "192.168.1.34"
+  port: 4001
 
 # Jetson 配置
 jetson:
   host: "192.168.1.58"
   user: "jetson"
   maps_dir: "/home/nvidia/maps"
+  rosbridge_port: 9090
 
 # Rosbridge 配置
 rosbridge:
   port: 9090
   address: "0.0.0.0"
-
-# SLAM 配置
-slam:
-  launch_file: "mapping_all.launch.py"
-  package: "jetson_node_pkg"
-
-# Navigation 配置
-navigation:
-  launch_file: "nav_all.launch.py"
-  package: "jetson_node_pkg"
-  default_map: ""
 
 # 前端配置
 frontend:

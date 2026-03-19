@@ -85,12 +85,12 @@ export function useRosConnection(wsUrl: string) {
     }
   }, []);
 
-  // Auto-connect on mount
+  // Auto-connect when wsUrl changes or on mount
   useEffect(() => {
-    if (connectionState === 'disconnected') {
+    if (wsUrl && (connectionState === 'disconnected' || connectionState === 'error')) {
       connect();
     }
-  }, []);
+  }, [wsUrl]);
 
   // Cleanup on unmount
   useEffect(() => {
