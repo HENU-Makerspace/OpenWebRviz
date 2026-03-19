@@ -91,22 +91,40 @@ class SystemManager(Node):
         self.get_logger().info('System Manager is ready.')
 
     def kill_current_process(self):
+        # Save process name for fallback kill
+        process_name_to_kill = self.process_name
+
         if self.current_process is not None:
             self.get_logger().info(f'Stopping {self.process_name}...')
             try:
                 if self.current_process.poll() is None:
-                    self.current_process.send_signal(signal.SIGINT)
+                    # Use process group to kill parent and all children
                     try:
-                        self.current_process.wait(timeout=10)
+                        os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
+                    except (ProcessLookupError, OSError):
+                        pass
+                    try:
+                        self.current_process.wait(timeout=5)
                     except subprocess.TimeoutExpired:
-                        self.get_logger().warn('Process did not exit gracefully, forcing kill...')
-                        self.current_process.kill()
-                        self.current_process.wait()
+                        try:
+                            os.killpg(os.getpgid(self.current_process.pid), signal.SIGKILL)
+                        except (ProcessLookupError, OSError):
+                            pass
             except Exception as e:
                 self.get_logger().warn(f'Error stopping process: {e}')
 
             self.current_process = None
             self.process_name = None
+
+        # Also kill any orphaned processes by name
+        if process_name_to_kill == 'slam':
+            subprocess.run(['pkill', '-f', 'slam_toolbox'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'online_async'], capture_output=True)
+        elif process_name_to_kill == 'navigation':
+            subprocess.run(['pkill', '-f', 'nav2_bringup'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'navigation_launch'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'robot_state_publisher'], capture_output=True)
+            subprocess.run(['pkill', '-f', 'gz sim'], capture_output=True)
 
     def handle_start_slam(self, request, response):
         self.kill_current_process()
@@ -114,7 +132,7 @@ class SystemManager(Node):
 
         try:
             cmd = ['ros2', 'launch', self.slam_package, self.slam_launch_file]
-            self.current_process = subprocess.Popen(cmd)
+            self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'slam'
 
             response.success = True
@@ -158,7 +176,7 @@ class SystemManager(Node):
                 f'params_file:={nav2_params_file}',
             ]
 
-            self.current_process = subprocess.Popen(cmd)
+            self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'navigation'
 
             self.get_logger().info(f'Started Navigation with PID: {self.current_process.pid}')
