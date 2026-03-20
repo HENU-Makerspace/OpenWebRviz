@@ -110,12 +110,8 @@ class SystemManager(Node):
         self.nav_launch_file = self.get_parameter('nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
 
-        # Discover server URL dynamically, fallback to parameter
-        param_url = self.get_parameter('server_url').value
-        if param_url and param_url.startswith('http'):
-            self.server_url = discover_server_url(param_url)
-        else:
-            self.server_url = discover_server_url()
+        # Discover server URL dynamically by scanning LAN
+        self.server_url = discover_server_url()
 
         self.get_logger().info(f'Server URL: {self.server_url}')
 
