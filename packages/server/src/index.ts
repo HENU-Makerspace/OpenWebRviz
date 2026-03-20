@@ -765,9 +765,10 @@ app.post('/api/broadcast', async (c) => {
 
 const PORT = process.env.PORT || 4001;
 
-console.log(`Server running on http://localhost:${PORT}`);
+console.log(`Server running on http://0.0.0.0:${PORT}`);
 
 export default {
   port: PORT,
+  hostname: '0.0.0.0',
   fetch: app.fetch,
 };

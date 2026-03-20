@@ -12,8 +12,8 @@ from std_srvs.srv import Trigger
 from jetson_interfaces.srv import StartNav
 
 
-def discover_server_url(default_url='http://192.168.1.34:4001'):
-    """Discover server URL by scanning local subnet"""
+def discover_server_url():
+    """Discover server URL by scanning entire local subnet"""
     import socket
 
     # Get robot's own IP to determine subnet
@@ -26,27 +26,66 @@ def discover_server_url(default_url='http://192.168.1.34:4001'):
     except:
         pass
 
-    # Build IP list to try
+    # Build full IP range to scan (entire subnet)
     if robot_ip:
         parts = robot_ip.split('.')
         subnet = f'{parts[0]}.{parts[1]}.{parts[2]}'
-        ips_to_try = [f'{subnet}.1'] + [f'{subnet}.{i}' for i in range(2, 21)]
+        ips_to_try = [f'{subnet}.{i}' for i in range(1, 255)]
     else:
-        ips_to_try = ['192.168.1.1', '192.168.1.34', '192.168.1.100']
+        # Fallback: common subnets - try all of them
+        ips_to_try = []
+        for subnet_prefix in ['192.168.1', '192.168.0', '192.168.2', '10.0.0']:
+            ips_to_try.extend([f'{subnet_prefix}.{i}' for i in range(1, 255)])
 
-    # Try /api/network endpoint on each IP
-    for ip in ips_to_try:
+    # Try /api/network endpoint on each IP in parallel with threading
+    import threading
+    result = {'url': None, 'lock': threading.Lock()}
+
+    def try_ip(ip):
+        if result['url']:
+            return
         try:
             resp = requests.get(f'http://{ip}:4001/api/network', timeout=1)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('ips') and len(data['ips']) > 0:
                     server_ip = data['ips'][0]
-                    return f'http://{server_ip}:4001'
+                    with result['lock']:
+                        result['url'] = f'http://{server_ip}:4001'
         except:
-            continue
+            pass
 
-    return default_url
+    # Scan in parallel for speed
+    threads = []
+    for ip in ips_to_try:
+        t = threading.Thread(target=try_ip, args=(ip,))
+        t.start()
+        threads.append(t)
+        # Limit concurrent connections
+        if len(threads) >= 50:
+            for t in threads[:50]:
+                t.join()
+            threads = threads[50:]
+
+    # Wait for remaining threads
+    for t in threads:
+        t.join()
+
+    if result['url']:
+        return result['url']
+
+    # Fallback: try localhost for testing
+    try:
+        resp = requests.get('http://localhost:4001/api/network', timeout=1)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get('ips') and len(data['ips']) > 0:
+                server_ip = data['ips'][0]
+                return f'http://{server_ip}:4001'
+    except:
+        pass
+
+    return None
 
 
 class SystemManager(Node):
