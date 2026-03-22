@@ -12,6 +12,7 @@ export interface RobotStatus {
 
 interface StartNavRequest {
   map_yaml_file: string;
+  stance: string; // "stand" or "crouch"
 }
 
 interface ServiceResponse {
@@ -49,8 +50,8 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
     });
   }, [ros, isConnected]);
 
-  // 调用导航服务 (需要传递 map_yaml_file)
-  const callStartNavService = useCallback((mapYamlPath: string): Promise<ServiceResponse> => {
+  // 调用导航服务 (需要传递 map_yaml_file 和 stance)
+  const callStartNavService = useCallback((mapYamlPath: string, stance: string): Promise<ServiceResponse> => {
     return new Promise((resolve, reject) => {
       if (!ros || !isConnected) {
         reject(new Error('Not connected to ROS'));
@@ -65,6 +66,7 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
 
       const request: StartNavRequest = {
         map_yaml_file: mapYamlPath,
+        stance: stance,
       };
 
       service.callService(request, (response: ServiceResponse) => {
@@ -108,11 +110,11 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
     }
   }, [callService]);
 
-  // 启动导航 (需要传递地图路径)
-  const startNavigation = useCallback(async (mapYamlPath: string) => {
+  // 启动导航 (需要传递地图路径和姿态)
+  const startNavigation = useCallback(async (mapYamlPath: string, stance: string = 'crouch') => {
     setStatus(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const response = await callStartNavService(mapYamlPath);
+      const response = await callStartNavService(mapYamlPath, stance);
       if (response.success) {
         setStatus({ mode: 'navigation', pid: null, loading: false, error: null });
       } else {

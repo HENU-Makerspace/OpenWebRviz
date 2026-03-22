@@ -100,6 +100,7 @@ class SystemManager(Node):
         self.declare_parameter('slam_launch_file', 'mapping_all.launch.py')
         self.declare_parameter('nav_package', 'jetson_node_pkg')
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
+        self.declare_parameter('stand_nav_launch_file', 'stand_nav_launch.py')
         self.declare_parameter('nav2_params_file', '/home/nvidia/ros2_ws/my_nav2_params.yaml')
         self.declare_parameter('server_url', 'http://192.168.1.34:4001')
 
@@ -108,6 +109,7 @@ class SystemManager(Node):
         self.slam_launch_file = self.get_parameter('slam_launch_file').value
         self.nav_package = self.get_parameter('nav_package').value
         self.nav_launch_file = self.get_parameter('nav_launch_file').value
+        self.stand_nav_launch_file = self.get_parameter('stand_nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
 
         # Discover server URL dynamically by scanning LAN, retry every 3s if not found
@@ -199,6 +201,9 @@ class SystemManager(Node):
             response.message = f'map file not found: {map_yaml_file}'
             return response
 
+        # Get stance from request (default to 'crouch')
+        stance = getattr(request, 'stance', 'crouch') or 'crouch'
+
         # 动态接收可选 nav2 参数文件
         nav2_params_file = getattr(request, 'nav2_params_file', self.nav2_params_file)
         if not os.path.exists(nav2_params_file):
@@ -206,13 +211,19 @@ class SystemManager(Node):
             response.message = f'Nav2 params file not found: {nav2_params_file}'
             return response
 
-        self.get_logger().info(f'Starting Navigation with map: {map_yaml_file} and params: {nav2_params_file}')
+        # Select launch file based on stance
+        if stance == 'stand':
+            nav_launch_file = self.stand_nav_launch_file
+            self.get_logger().info(f'Starting Stand Navigation with map: {map_yaml_file}')
+        else:
+            nav_launch_file = self.nav_launch_file
+            self.get_logger().info(f'Starting Crouch Navigation with map: {map_yaml_file}')
 
         try:
             cmd = [
                 'ros2', 'launch',
                 self.nav_package,
-                self.nav_launch_file,
+                nav_launch_file,
                 f'map:={map_yaml_file}',
                 f'params_file:={nav2_params_file}',
             ]
@@ -220,9 +231,9 @@ class SystemManager(Node):
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'navigation'
 
-            self.get_logger().info(f'Started Navigation with PID: {self.current_process.pid}')
+            self.get_logger().info(f'Started Navigation with PID: {self.current_process.pid}, stance: {stance}')
             response.success = True
-            response.message = f'Navigation started with map: {map_yaml_file}'
+            response.message = f'Navigation started with map: {map_yaml_file} (stance: {stance})'
         except Exception as e:
             self.get_logger().error(f'Failed to start Navigation: {e}')
             response.success = False

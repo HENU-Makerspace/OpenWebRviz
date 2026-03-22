@@ -26,7 +26,13 @@ def generate_launch_description():
     nav_launch_file_arg = DeclareLaunchArgument(
         'nav_launch_file',
         default_value='nav_all.launch.py',
-        description='Navigation launch file name'
+        description='Navigation launch file name (crouch mode)'
+    )
+
+    stand_nav_launch_file_arg = DeclareLaunchArgument(
+        'stand_nav_launch_file',
+        default_value='stand_nav_launch.py',
+        description='Stand navigation launch file name'
     )
 
     maps_dir_arg = DeclareLaunchArgument(
@@ -50,6 +56,7 @@ def generate_launch_description():
             'slam_launch_file': LaunchConfiguration('slam_launch_file'),
             'nav_package': LaunchConfiguration('nav_package'),
             'nav_launch_file': LaunchConfiguration('nav_launch_file'),
+            'stand_nav_launch_file': LaunchConfiguration('stand_nav_launch_file'),
             'maps_dir': LaunchConfiguration('maps_dir'),
             'server_url': LaunchConfiguration('server_url'),
         }],
@@ -61,6 +68,7 @@ def generate_launch_description():
         slam_launch_file_arg,
         nav_package_arg,
         nav_launch_file_arg,
+        stand_nav_launch_file_arg,
         maps_dir_arg,
         server_url_arg,
         system_manager_node,

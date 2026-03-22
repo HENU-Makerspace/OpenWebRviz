@@ -169,9 +169,12 @@ interface NavigationPanelProps {
   setSelectedMap: (map: string | null) => void;
 }
 
+type Stance = 'stand' | 'crouch';
+
 function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelectedMap, wsUrl }: NavigationPanelProps & { wsUrl: string }) {
   const { maps, fetchMaps, loading } = useMapManager();
   const [starting, setStarting] = useState(false);
+  const [stance, setStance] = useState<Stance>('crouch');
 
   // Use system manager for robot control
   const { ros, isConnected } = useRosConnection(wsUrl);
@@ -184,16 +187,16 @@ function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelect
   }, [fetchMaps]);
 
   const startNavigation = async () => {
-    console.log('[StartNav] clicked, selectedMap:', selectedMap, 'isNavRunning:', isNavRunning);
+    console.log('[StartNav] clicked, selectedMap:', selectedMap, 'stance:', stance, 'isNavRunning:', isNavRunning);
     if (!selectedMap) {
       console.log('[StartNav] no map selected, returning');
       return;
     }
     setStarting(true);
-    // 传递 Jetson 上的地图路径
+    // 传递 Jetson 上的地图路径和姿态
     const mapYamlPath = `/home/nvidia/maps/${selectedMap}.yaml`;
-    console.log('[StartNav] calling startNav with:', mapYamlPath);
-    await startNav(mapYamlPath);
+    console.log('[StartNav] calling startNav with:', mapYamlPath, 'stance:', stance);
+    await startNav(mapYamlPath, stance);
     setStarting(false);
   };
 
@@ -230,13 +233,42 @@ function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelect
         ))}
       </select>
 
+      {/* Stance selection - disabled during navigation */}
+      <div className="space-y-1">
+        <h4 className="text-xs font-medium text-gray-500">Stance</h4>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setStance('crouch')}
+            disabled={isNavRunning}
+            className={`flex-1 text-xs py-1 px-2 rounded border ${
+              stance === 'crouch'
+                ? 'bg-blue-100 border-blue-500 text-blue-700'
+                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
+            } disabled:opacity-50`}
+          >
+            Crouch
+          </button>
+          <button
+            onClick={() => setStance('stand')}
+            disabled={isNavRunning}
+            className={`flex-1 text-xs py-1 px-2 rounded border ${
+              stance === 'stand'
+                ? 'bg-blue-100 border-blue-500 text-blue-700'
+                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
+            } disabled:opacity-50`}
+          >
+            Stand
+          </button>
+        </div>
+      </div>
+
       {selectedMap && !isNavRunning && (
         <button
           onClick={startNavigation}
           disabled={starting}
           className="w-full bg-purple-600 text-white text-xs py-1 px-2 rounded hover:bg-purple-700 disabled:opacity-50"
         >
-          {starting ? 'Starting...' : 'Start Navigation'}
+          {starting ? 'Starting...' : `Start Navigation (${stance === 'stand' ? 'Stand' : 'Crouch'})`}
         </button>
       )}
 

@@ -1,12 +1,12 @@
 # 机器人与服务器配置文件
 # 服务器配置
 server:
-  host: "192.168.1.34"
+  host: "192.168.43.156"
   port: 4001
 
 # Jetson 配置
 jetson:
-  host: "192.168.1.58"
+  host: "192.168.43.58"
   user: "jetson"
   maps_dir: "/home/nvidia/maps"
   rosbridge_port: 9090
