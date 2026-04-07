@@ -14,6 +14,7 @@ export interface MediaConfig {
 }
 
 interface MediaServiceStatus {
+  serviceUnit: boolean;
   janus: boolean;
   demoServer: boolean;
   videoPipeline: boolean;
@@ -132,6 +133,7 @@ function pickStream(
 
 export function useRobotMedia(config: MediaConfig | null) {
   const [serviceStatus, setServiceStatus] = useState<MediaServiceStatus>({
+    serviceUnit: false,
     janus: false,
     demoServer: false,
     videoPipeline: false,

@@ -1,0 +1,17 @@
+[Unit]
+Description=WebBot Media Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=%h/bin/webbot-media.sh cleanup-only
+ExecStart=%h/bin/webbot-media.sh
+ExecStopPost=%h/bin/webbot-media.sh cleanup-only
+Restart=always
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

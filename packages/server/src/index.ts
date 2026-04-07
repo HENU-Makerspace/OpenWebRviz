@@ -80,12 +80,21 @@ const JANUS_ADAPTER_ASSET = config?.media?.adapter_asset || 'adapter.min.js';
 const JANUS_SCRIPT_ASSET = config?.media?.janus_script_asset || 'janus.js';
 const LOCAL_JANUS_GATEWAY_DIR = config?.media?.local_janus_gateway_dir || path.join(process.cwd(), '..', '..', 'janus-gateway');
 const LOCAL_JANUS_DEMOS_DIR = path.join(LOCAL_JANUS_GATEWAY_DIR, 'html', 'demos');
+const LOCAL_MEDIA_SYSTEMD_DIR = path.join(process.cwd(), 'systemd');
+const LOCAL_MEDIA_SERVICE_SCRIPT_TEMPLATE_PATH = path.join(LOCAL_MEDIA_SYSTEMD_DIR, 'webbot-media.sh');
+const LOCAL_MEDIA_SERVICE_UNIT_TEMPLATE_PATH = path.join(LOCAL_MEDIA_SYSTEMD_DIR, 'webbot-media.service');
 const MEDIA_AUDIO_CAPTURE_DEVICE = config?.media?.audio_capture_device || 'plughw:CARD=UACDemoV10,DEV=0';
 const MEDIA_AUDIO_PLAYBACK_DEVICE = config?.media?.audio_playback_device || 'hw:0,0';
 const MEDIA_AUDIO_CAPTURE_PORT = config?.media?.audio_capture_port || 5005;
 const MEDIA_AUDIO_PLAYBACK_PORT = config?.media?.audio_playback_port || 5006;
 const MEDIA_VIDEO_DEVICE = config?.media?.video_device || '/dev/video0';
 const MEDIA_VIDEO_PORT = config?.media?.video_port || 8004;
+const MEDIA_SERVICE_NAME = config?.media?.service_name || 'webbot-media.service';
+const MEDIA_SERVICE_SCRIPT_PATH = config?.media?.service_script_path || `/home/${JETSON_USER}/bin/webbot-media.sh`;
+const MEDIA_SERVICE_UNIT_PATH = config?.media?.service_unit_path || `/home/${JETSON_USER}/.config/systemd/user/webbot-media.service`;
+const MEDIA_VIDEO_WIDTH = config?.media?.video_width || 1280;
+const MEDIA_VIDEO_HEIGHT = config?.media?.video_height || 720;
+const MEDIA_VIDEO_FRAMERATE = config?.media?.video_framerate || '30/1';
 const MEDIA_VIDEO_BITRATE = config?.media?.video_bitrate || 4000;
 const MEDIA_VIDEO_STREAM_ID = config?.media?.preferred_video_stream_id || 0;
 const MEDIA_AUDIO_STREAM_ID = config?.media?.preferred_audio_stream_id || 0;
@@ -182,6 +191,7 @@ def running(pattern: str) -> bool:
     return False
 
 print(json.dumps({
+    "serviceUnit": subprocess.run(["systemctl", "--user", "is-active", ${JSON.stringify(MEDIA_SERVICE_NAME)}], capture_output=True, text=True).stdout.strip() == "active",
     "janus": running(${JSON.stringify(JANUS_BINARY)}),
     "demoServer": running(${JSON.stringify(`python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`)}),
     "videoPipeline": running(${JSON.stringify(`gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE}`)}),
@@ -192,6 +202,30 @@ print(json.dumps({
 
   const { stdout } = await runRemotePython(script);
   return JSON.parse(stdout.trim());
+}
+
+async function syncRemoteMediaServiceFiles() {
+  const serviceScript = fs.readFileSync(LOCAL_MEDIA_SERVICE_SCRIPT_TEMPLATE_PATH, 'utf-8');
+  const serviceUnit = fs.readFileSync(LOCAL_MEDIA_SERVICE_UNIT_TEMPLATE_PATH, 'utf-8');
+
+  const script = `
+from pathlib import Path
+import os
+
+files = {
+    ${JSON.stringify(MEDIA_SERVICE_SCRIPT_PATH)}: ${JSON.stringify(serviceScript)},
+    ${JSON.stringify(MEDIA_SERVICE_UNIT_PATH)}: ${JSON.stringify(serviceUnit)},
+}
+
+for file_path, content in files.items():
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+os.chmod(${JSON.stringify(MEDIA_SERVICE_SCRIPT_PATH)}, 0o755)
+`;
+
+  await runRemotePython(script);
 }
 
 async function forwardJanusRequest<T = any>(plugin: string, body: Record<string, unknown>) {
@@ -408,89 +442,14 @@ app.get('/api/media/status', async (c) => {
 
 app.post('/api/media/start', async (c) => {
   try {
-    const specs = [
-      {
-        name: 'janus',
-        pattern: JANUS_BINARY,
-        command: JANUS_BINARY,
-        log: '/tmp/webbot-janus.log',
-      },
-      {
-        name: 'demoServer',
-        pattern: `python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`,
-        command: `python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`,
-        log: '/tmp/webbot-janus-http.log',
-      },
-      {
-        name: 'audioCapture',
-        pattern: `gst-launch-1.0 -v alsasrc device=${MEDIA_AUDIO_CAPTURE_DEVICE}`,
-        command: `gst-launch-1.0 -v alsasrc device="${MEDIA_AUDIO_CAPTURE_DEVICE}" ! audioconvert ! audioresample ! opusenc ! rtpopuspay ! udpsink host=127.0.0.1 port=${MEDIA_AUDIO_CAPTURE_PORT}`,
-        log: '/tmp/webbot-audio-capture.log',
-      },
-      {
-        name: 'audioPlayback',
-        pattern: `gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT}`,
-        command: `gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT} caps="application/x-rtp, media=(string)audio, clock-rate=(int)48000, encoding-name=(string)OPUS, payload=(int)111" ! queue ! rtpopusdepay ! opusdec ! audioconvert ! audioresample ! alsasink device=${MEDIA_AUDIO_PLAYBACK_DEVICE}`,
-        log: '/tmp/webbot-audio-playback.log',
-      },
-      {
-        name: 'videoPipeline',
-        pattern: `gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE}`,
-        command: `gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE} do-timestamp=true ! jpegdec ! nvvideoconvert ! 'video/x-raw,format=I420' ! x264enc bitrate=${MEDIA_VIDEO_BITRATE} tune=zerolatency speed-preset=ultrafast ! rtph264pay config-interval=1 pt=96 ! udpsink host=127.0.0.1 port=${MEDIA_VIDEO_PORT}`,
-        log: '/tmp/webbot-video.log',
-      },
-    ];
+    await syncRemoteMediaServiceFiles();
 
-    const script = `
-import json
-import os
-import subprocess
-import time
-
-self_pid = os.getpid()
-parent_pid = os.getppid()
-specs = json.loads(r'''${JSON.stringify(specs)}''')
-
-def running(pattern: str) -> bool:
-    output = subprocess.check_output(["ps", "-eo", "pid,args"], text=True)
-    for line in output.splitlines()[1:]:
-        parts = line.strip().split(None, 1)
-        if len(parts) < 2:
-            continue
-        pid = int(parts[0])
-        args = parts[1]
-        if pid in (self_pid, parent_pid):
-            continue
-        if pattern in args:
-            return True
-    return False
-
-result = {}
-for spec in specs:
-    started = False
-    if not running(spec["pattern"]):
-        with open(spec["log"], "ab") as logfile:
-            subprocess.Popen(
-                spec["command"],
-                shell=True,
-                executable="/bin/bash",
-                stdout=logfile,
-                stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL,
-                close_fds=True,
-                start_new_session=True,
-            )
-        time.sleep(1)
-        started = True
-    result[spec["name"]] = {
-        "started": started,
-        "running": running(spec["pattern"]),
-    }
-
-print(json.dumps(result))
-`;
-
-    const { stdout } = await runRemotePython(script);
+    const { stdout } = await runRemoteCommand(`
+systemctl --user daemon-reload
+systemctl --user enable ${shellQuote(MEDIA_SERVICE_NAME)}
+systemctl --user restart ${shellQuote(MEDIA_SERVICE_NAME)}
+systemctl --user is-active ${shellQuote(MEDIA_SERVICE_NAME)}
+`);
     const service = await getRemoteMediaStatus();
 
     return c.json({ status: 'started', details: stdout.trim(), service });
@@ -512,38 +471,10 @@ app.post('/api/media/stop', async (c) => {
       }).catch(() => undefined);
     }
 
-    const script = `
-import os
-import signal
-import subprocess
-
-self_pid = os.getpid()
-parent_pid = os.getppid()
-patterns = [
-    ${JSON.stringify(JANUS_BINARY)},
-    ${JSON.stringify(`python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`)},
-    ${JSON.stringify(`gst-launch-1.0 -v alsasrc device=${MEDIA_AUDIO_CAPTURE_DEVICE}`)},
-    ${JSON.stringify(`gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT}`)},
-    ${JSON.stringify(`gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE}`)},
-]
-
-output = subprocess.check_output(["ps", "-eo", "pid,args"], text=True)
-for line in output.splitlines()[1:]:
-    parts = line.strip().split(None, 1)
-    if len(parts) < 2:
-        continue
-    pid = int(parts[0])
-    args = parts[1]
-    if pid in (self_pid, parent_pid):
-        continue
-    if any(pattern in args for pattern in patterns):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-`;
-
-    await runRemotePython(script);
+    await runRemoteCommand(`
+systemctl --user stop ${shellQuote(MEDIA_SERVICE_NAME)} || true
+systemctl --user reset-failed ${shellQuote(MEDIA_SERVICE_NAME)} || true
+`);
 
     return c.json({ status: 'stopped' });
   } catch (error) {

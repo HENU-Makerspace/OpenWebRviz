@@ -23,6 +23,9 @@ frontend:
 
 # WebRTC / Janus 媒体配置
 media:
+  service_name: "webbot-media.service"
+  service_script_path: "/home/nvidia/bin/webbot-media.sh"
+  service_unit_path: "/home/nvidia/.config/systemd/user/webbot-media.service"
   janus_host: "192.168.1.58"
   janus_http_port: 8088
   janus_api_path: "/janus"
@@ -45,6 +48,9 @@ media:
   audiobridge_display: "webbot-ui"
   video_device: "/dev/video0"
   video_port: 8004
+  video_width: 1280
+  video_height: 720
+  video_framerate: "30/1"
   video_bitrate: 4000
   preferred_video_stream_id: 101
 

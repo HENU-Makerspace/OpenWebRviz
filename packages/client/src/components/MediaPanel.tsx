@@ -34,6 +34,7 @@ export function MediaPanel({ media }: MediaPanelProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-2">
+          <StatusBadge label="Systemd" active={media.serviceStatus.serviceUnit} />
           <StatusBadge label="Janus" active={media.serviceStatus.janus} />
           <StatusBadge label="Demo HTTP" active={media.serviceStatus.demoServer} />
           <StatusBadge label="Video Push" active={media.serviceStatus.videoPipeline} />
