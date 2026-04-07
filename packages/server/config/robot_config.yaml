@@ -7,7 +7,7 @@ server:
 # Jetson 配置
 jetson:
   host: "192.168.1.58"
-  user: "jetson"
+  user: "nvidia"
   maps_dir: "/home/nvidia/maps"
   rosbridge_port: 9090
 
@@ -34,10 +34,10 @@ media:
   streaming_path: "/demos/streaming.html#"
   audiobridge_path: "/demos/audiobridge.html"
   audio_capture_device: "plughw:CARD=UACDemoV10,DEV=0"
-  audio_playback_device: "hw:0,0"
+  audio_playback_device: "hw:2,0"
   audio_capture_port: 5005
   audio_playback_port: 5006
-  preferred_audio_stream_id: 0
+  preferred_audio_stream_id: 99
   audiobridge_room: 1234
   audiobridge_secret: "adminpwd"
   audiobridge_forward_host: "127.0.0.1"
@@ -46,7 +46,7 @@ media:
   video_device: "/dev/video0"
   video_port: 8004
   video_bitrate: 4000
-  preferred_video_stream_id: 0
+  preferred_video_stream_id: 101
 
 # 话题配置
 topics:

@@ -243,6 +243,7 @@ async function getTalkbackForwarders() {
     }>('janus.plugin.audiobridge', {
       request: 'listforwarders',
       room: MEDIA_AUDIO_BRIDGE_ROOM,
+      secret: MEDIA_AUDIO_BRIDGE_SECRET,
     });
 
     return (response.rtp_forwarders || []).filter((forwarder) =>
@@ -476,6 +477,7 @@ app.post('/api/media/stop', async (c) => {
       await forwardJanusRequest('janus.plugin.audiobridge', {
         request: 'stop_rtp_forward',
         room: MEDIA_AUDIO_BRIDGE_ROOM,
+        secret: MEDIA_AUDIO_BRIDGE_SECRET,
         stream_id: forwarder.stream_id,
       }).catch(() => undefined);
     }
@@ -539,6 +541,7 @@ app.post('/api/media/talkback/forward/stop', async (c) => {
       await forwardJanusRequest('janus.plugin.audiobridge', {
         request: 'stop_rtp_forward',
         room: MEDIA_AUDIO_BRIDGE_ROOM,
+        secret: MEDIA_AUDIO_BRIDGE_SECRET,
         stream_id: forwarder.stream_id,
       });
     }

@@ -1,4 +1,4 @@
-import { Loader2, Mic, Play, Radio, Square, Volume2, Waves } from 'lucide-react';
+import { Loader2, Mic, Play, Radio, RefreshCw, Square, Volume2, Waves } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -18,6 +18,8 @@ function StatusBadge({ label, active }: { label: string; active: boolean }) {
 
 export function MediaPanel({ media }: MediaPanelProps) {
   const busy = media.loadingAction !== null;
+  const serviceRunning = Object.values(media.serviceStatus).some(Boolean);
+  const canStop = serviceRunning || media.videoConnected || media.audioConnected || media.talkbackActive;
 
   return (
     <Card className="border-slate-300">
@@ -41,15 +43,25 @@ export function MediaPanel({ media }: MediaPanelProps) {
         </div>
 
         <div className="grid grid-cols-2 gap-2">
-          <Button onClick={media.startServices} disabled={busy} variant="default" size="sm">
+          <Button
+            onClick={media.startServices}
+            disabled={busy || serviceRunning}
+            variant="default"
+            size="sm"
+          >
             {media.loadingAction === 'start-services' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Radio className="h-4 w-4" />
             )}
-            启动服务
+            {serviceRunning ? '服务已启动' : '启动服务'}
           </Button>
-          <Button onClick={() => void media.stopAll()} disabled={busy} variant="destructive" size="sm">
+          <Button
+            onClick={() => void media.stopAll()}
+            disabled={busy || !canStop}
+            variant="destructive"
+            size="sm"
+          >
             {media.loadingAction === 'stop-all' ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
@@ -58,6 +70,11 @@ export function MediaPanel({ media }: MediaPanelProps) {
             全部停止
           </Button>
         </div>
+
+        <Button onClick={media.refreshStatus} disabled={busy} variant="secondary" size="sm" className="w-full">
+          <RefreshCw className="h-4 w-4" />
+          刷新状态
+        </Button>
 
         <div className="grid grid-cols-1 gap-2">
           <Button

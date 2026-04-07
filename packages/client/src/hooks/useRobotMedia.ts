@@ -350,11 +350,12 @@ export function useRobotMedia(config: MediaConfig | null) {
       try {
         await requestJson('/api/media/talkback/forward/stop', { method: 'POST' });
         setTalkbackForwardActive(false);
+        await refreshStatus();
       } catch {
         // Keep the browser cleanup successful even if forwarder cleanup fails.
       }
     }
-  }, [config, destroySessionIfIdle, requestJson, stopTracks]);
+  }, [config, destroySessionIfIdle, refreshStatus, requestJson, stopTracks]);
 
   const stopAll = useCallback(async () => {
     stopVideo();
@@ -548,6 +549,7 @@ export function useRobotMedia(config: MediaConfig | null) {
       await ensureRobotService(['janus', 'audioPlayback']);
       await requestJson('/api/media/talkback/forward/start', { method: 'POST' });
       setTalkbackForwardActive(true);
+      await refreshStatus();
       await ensureJanusRuntime(config);
 
       const handle = await attachPlugin('janus.plugin.audiobridge', {
@@ -620,6 +622,7 @@ export function useRobotMedia(config: MediaConfig | null) {
     config,
     ensureRobotService,
     pluginMessage,
+    refreshStatus,
     requestJson,
     stopTalkback,
   ]);
