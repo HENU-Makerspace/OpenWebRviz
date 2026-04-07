@@ -3,13 +3,14 @@ import { useLayers } from './LayerControl';
 
 interface ImageOverlayProps {
   ros: any;
+  hidden?: boolean;
 }
 
-export function ImageOverlay({ ros }: ImageOverlayProps) {
+export function ImageOverlay({ ros, hidden = false }: ImageOverlayProps) {
   const { layers, subscriptionSettings } = useLayers();
   const { imageData, isImageReceived } = useRosImage(ros, '/image_raw/compressed', subscriptionSettings.paused);
 
-  if (!layers.image || !isImageReceived || !imageData) {
+  if (hidden || !layers.image || !isImageReceived || !imageData) {
     return null;
   }
 

@@ -81,17 +81,56 @@ Jetson 播放:
 
 ### 第二阶段：去掉 demo 页面，接成正式前端
 
-建议在 React 里单独做两个组件：
+这一阶段现在已经落到了当前仓库里：
 
-- `JanusVideoViewer`
-- `JanusAudioBridge`
+- 服务端新增了 Jetson 媒体服务控制接口：
+  - `/api/media/start`
+  - `/api/media/stop`
+  - `/api/media/status`
+  - `/api/media/talkback/forward/start`
+  - `/api/media/talkback/forward/stop`
+- 服务端把 Janus HTTP 信令代理到了当前站点：
+  - `/api/media/janus`
+- 服务端把 Jetson 上的 `janus.js` / `adapter.min.js` 代理到了当前站点：
+  - `/api/media/assets/*`
+- 前端新增了当前页面内的一键按钮：
+  - 启动服务
+  - 打开视频
+  - 监听机器人声音
+  - 开始对讲
+  - 全部停止
 
-它们直接使用 Janus JS SDK 连接：
+也就是说，浏览器不再依赖单独打开 `streaming.html` 和 `audiobridge.html`，而是通过 React 组件直接连接 Janus。
+
+React 侧职责现在变成：
 
 - 视频/音频接收：连接 Streaming Plugin
 - 音频发送：连接 AudioBridge Plugin
 
-这样就不需要再依赖 `/opt/janus/share/janus/html/demos/*.html` 页面。
+## 当前实现的前提条件
+
+### 1. 当前服务端能免密 SSH 到 Jetson
+
+当前一键化的服务控制是由 `packages/server/src/index.ts` 通过 SSH 远程执行的，因此需要：
+
+- 服务端运行机器可以访问 Jetson
+- 已配置好免密 SSH
+- `packages/server/config/robot_config.yaml` 里的 `jetson.host` / `jetson.user` 正确
+
+### 2. Jetson 上已有 Janus Streaming / AudioBridge 配置
+
+当前仓库已经把播放器和对讲器接进来了，但 Janus 自身的 mountpoint / room 仍然要在 Jetson 上存在：
+
+- Video streaming mountpoint
+- Audio streaming mountpoint
+- AudioBridge room
+
+如果你们的 mountpoint ID 固定，可以在 `robot_config.yaml` 里填写：
+
+- `preferred_video_stream_id`
+- `preferred_audio_stream_id`
+
+如果不填，前端会自动选择第一个可用的音频或视频流。
 
 ## 不建议的做法
 

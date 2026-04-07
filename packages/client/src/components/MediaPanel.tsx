@@ -1,57 +1,104 @@
-interface MediaConfig {
-  janusBaseUrl: string;
-  janusDemoBaseUrl: string;
-  streamingUrl: string;
-  audioBridgeUrl: string;
-}
+import { Loader2, Mic, Play, Radio, Square, Volume2, Waves } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { useRobotMedia } from '../hooks/useRobotMedia';
 
 interface MediaPanelProps {
-  media: MediaConfig;
+  media: ReturnType<typeof useRobotMedia>;
 }
 
-function openExternal(url: string) {
-  window.open(url, '_blank', 'noopener,noreferrer');
+function StatusBadge({ label, active }: { label: string; active: boolean }) {
+  return (
+    <Badge variant={active ? 'success' : 'outline'}>
+      {label}
+    </Badge>
+  );
 }
 
 export function MediaPanel({ media }: MediaPanelProps) {
+  const busy = media.loadingAction !== null;
+
   return (
-    <div className="space-y-3">
-      <div>
-        <h3 className="text-sm font-medium text-gray-500">Media</h3>
-        <p className="mt-1 text-xs text-gray-500">
-          音视频通过 Jetson 上的 Janus 走 WebRTC，和 ROS 数据链路分开。
-        </p>
-      </div>
+    <Card className="border-slate-300">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Waves className="h-4 w-4 text-slate-600" />
+          Media Console
+        </CardTitle>
+        <CardDescription>
+          通过当前界面的按钮控制 Jetson 上的 Janus、音频和摄像头 WebRTC 链路。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge label="Janus" active={media.serviceStatus.janus} />
+          <StatusBadge label="Demo HTTP" active={media.serviceStatus.demoServer} />
+          <StatusBadge label="Video Push" active={media.serviceStatus.videoPipeline} />
+          <StatusBadge label="Audio In" active={media.serviceStatus.audioCapture} />
+          <StatusBadge label="Audio Out" active={media.serviceStatus.audioPlayback} />
+          <StatusBadge label="RTP Forward" active={media.talkbackForwardActive} />
+        </div>
 
-      <div className="space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
-        <div className="text-xs font-medium text-gray-700">Video / Audio Receive</div>
-        <div className="break-all text-xs text-gray-500">{media.streamingUrl}</div>
-        <button
-          onClick={() => openExternal(media.streamingUrl)}
-          className="w-full rounded bg-slate-800 px-3 py-2 text-xs text-white hover:bg-slate-900"
-        >
-          Open Streaming Demo
-        </button>
-      </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Button onClick={media.startServices} disabled={busy} variant="default" size="sm">
+            {media.loadingAction === 'start-services' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Radio className="h-4 w-4" />
+            )}
+            启动服务
+          </Button>
+          <Button onClick={() => void media.stopAll()} disabled={busy} variant="destructive" size="sm">
+            {media.loadingAction === 'stop-all' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Square className="h-4 w-4" />
+            )}
+            全部停止
+          </Button>
+        </div>
 
-      <div className="space-y-2 rounded border border-gray-200 bg-gray-50 p-3">
-        <div className="text-xs font-medium text-gray-700">Two-way Audio Send</div>
-        <div className="break-all text-xs text-gray-500">{media.audioBridgeUrl}</div>
-        <button
-          onClick={() => openExternal(media.audioBridgeUrl)}
-          className="w-full rounded bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700"
-        >
-          Open AudioBridge Demo
-        </button>
-        <p className="text-[11px] text-gray-500">
-          页面打开后仍需在浏览器控制台执行 `rtp_forward`，把 Janus 音频转发到 Jetson 本地 UDP 端口。
-        </p>
-      </div>
+        <div className="grid grid-cols-1 gap-2">
+          <Button
+            onClick={media.videoConnected ? media.stopVideo : () => void media.startVideo()}
+            disabled={busy}
+            variant={media.videoConnected ? 'secondary' : 'outline'}
+            size="sm"
+          >
+            <Play className="h-4 w-4" />
+            {media.videoConnected ? '关闭视频' : '打开视频'}
+          </Button>
 
-      <div className="space-y-1 rounded border border-dashed border-gray-300 p-3 text-[11px] text-gray-500">
-        <div>Janus API: {media.janusBaseUrl}</div>
-        <div>Janus Demo: {media.janusDemoBaseUrl}</div>
-      </div>
-    </div>
+          <Button
+            onClick={media.audioConnected ? media.stopAudioMonitor : () => void media.startAudioMonitor()}
+            disabled={busy}
+            variant={media.audioConnected ? 'secondary' : 'outline'}
+            size="sm"
+          >
+            <Volume2 className="h-4 w-4" />
+            {media.audioConnected ? '停止监听' : '监听机器人声音'}
+          </Button>
+
+          <Button
+            onClick={media.talkbackActive ? () => void media.stopTalkback() : () => void media.startTalkback()}
+            disabled={busy}
+            variant={media.talkbackActive ? 'secondary' : 'outline'}
+            size="sm"
+          >
+            <Mic className="h-4 w-4" />
+            {media.talkbackActive ? '结束对讲' : '开始对讲'}
+          </Button>
+        </div>
+
+        {media.error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {media.error}
+          </div>
+        )}
+
+        <audio ref={media.audioRef} autoPlay playsInline />
+      </CardContent>
+    </Card>
   );
 }

@@ -25,9 +25,28 @@ frontend:
 media:
   janus_host: "192.168.1.58"
   janus_http_port: 8088
+  janus_api_path: "/janus"
   janus_demo_port: 8000
+  janus_binary: "/opt/janus/bin/janus"
+  janus_html_dir: "/opt/janus/share/janus/html"
+  adapter_asset: "adapter.min.js"
+  janus_script_asset: "janus.js"
   streaming_path: "/demos/streaming.html#"
   audiobridge_path: "/demos/audiobridge.html"
+  audio_capture_device: "plughw:CARD=UACDemoV10,DEV=0"
+  audio_playback_device: "hw:0,0"
+  audio_capture_port: 5005
+  audio_playback_port: 5006
+  preferred_audio_stream_id: 0
+  audiobridge_room: 1234
+  audiobridge_secret: "adminpwd"
+  audiobridge_forward_host: "127.0.0.1"
+  audiobridge_forward_port: 5006
+  audiobridge_display: "webbot-ui"
+  video_device: "/dev/video0"
+  video_port: 8004
+  video_bitrate: 4000
+  preferred_video_stream_id: 0
 
 # 话题配置
 topics:

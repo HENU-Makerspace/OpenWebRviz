@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { exec, execSync } from 'child_process';
+import { exec, execFile, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const app = new Hono();
 
 const MAPS_DIR = path.join(process.cwd(), 'maps');
@@ -69,9 +70,28 @@ const JETSON_MAPS_DIR = config?.jetson?.maps_dir || '/home/nvidia/maps';
 const JETSON_ROSBRIDGE_PORT = config?.jetson?.rosbridge_port || 9090;
 const JANUS_HOST = config?.media?.janus_host || JETSON_HOST;
 const JANUS_HTTP_PORT = config?.media?.janus_http_port || 8088;
+const JANUS_API_PATH = config?.media?.janus_api_path || '/janus';
 const JANUS_DEMO_PORT = config?.media?.janus_demo_port || 8000;
 const JANUS_STREAMING_PATH = config?.media?.streaming_path || '/demos/streaming.html#';
 const JANUS_AUDIOBRIDGE_PATH = config?.media?.audiobridge_path || '/demos/audiobridge.html';
+const JANUS_BINARY = config?.media?.janus_binary || '/opt/janus/bin/janus';
+const JANUS_HTML_DIR = config?.media?.janus_html_dir || '/opt/janus/share/janus/html';
+const JANUS_ADAPTER_ASSET = config?.media?.adapter_asset || 'adapter.min.js';
+const JANUS_SCRIPT_ASSET = config?.media?.janus_script_asset || 'janus.js';
+const MEDIA_AUDIO_CAPTURE_DEVICE = config?.media?.audio_capture_device || 'plughw:CARD=UACDemoV10,DEV=0';
+const MEDIA_AUDIO_PLAYBACK_DEVICE = config?.media?.audio_playback_device || 'hw:0,0';
+const MEDIA_AUDIO_CAPTURE_PORT = config?.media?.audio_capture_port || 5005;
+const MEDIA_AUDIO_PLAYBACK_PORT = config?.media?.audio_playback_port || 5006;
+const MEDIA_VIDEO_DEVICE = config?.media?.video_device || '/dev/video0';
+const MEDIA_VIDEO_PORT = config?.media?.video_port || 8004;
+const MEDIA_VIDEO_BITRATE = config?.media?.video_bitrate || 4000;
+const MEDIA_VIDEO_STREAM_ID = config?.media?.preferred_video_stream_id || 0;
+const MEDIA_AUDIO_STREAM_ID = config?.media?.preferred_audio_stream_id || 0;
+const MEDIA_AUDIO_BRIDGE_ROOM = config?.media?.audiobridge_room || 1234;
+const MEDIA_AUDIO_BRIDGE_SECRET = config?.media?.audiobridge_secret || 'adminpwd';
+const MEDIA_AUDIO_BRIDGE_FORWARD_HOST = config?.media?.audiobridge_forward_host || '127.0.0.1';
+const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port || MEDIA_AUDIO_PLAYBACK_PORT;
+const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
 
 console.log('[Config] Loaded config:', {
   SERVER_HOST,
@@ -79,8 +99,190 @@ console.log('[Config] Loaded config:', {
   JETSON_ROSBRIDGE_PORT,
   JANUS_HOST,
   JANUS_HTTP_PORT,
+  JANUS_API_PATH,
   JANUS_DEMO_PORT,
 });
+
+function randomTransaction() {
+  return Math.random().toString(36).slice(2, 12);
+}
+
+function parseTruthyFlag(value: string | undefined) {
+  return value?.trim() === '1';
+}
+
+async function runRemoteCommand(command: string) {
+  return execFileAsync('ssh', [
+    '-o', 'BatchMode=yes',
+    '-o', 'ConnectTimeout=5',
+    `${JETSON_USER}@${JETSON_HOST}`,
+    'bash',
+    '-lc',
+    command,
+  ]);
+}
+
+async function getRemoteMediaStatus() {
+  const script = `
+printf 'janus=%s\n' "$(pgrep -f '${JANUS_BINARY}' >/dev/null && echo 1 || echo 0)"
+printf 'demo_server=%s\n' "$(pgrep -f 'python3 -m http.server ${JANUS_DEMO_PORT}' >/dev/null && echo 1 || echo 0)"
+printf 'video_pipeline=%s\n' "$(pgrep -f 'gst-launch-1.0.*port=${MEDIA_VIDEO_PORT}' >/dev/null && echo 1 || echo 0)"
+printf 'audio_capture=%s\n' "$(pgrep -f 'gst-launch-1.0.*port=${MEDIA_AUDIO_CAPTURE_PORT}' >/dev/null && echo 1 || echo 0)"
+printf 'audio_playback=%s\n' "$(pgrep -f 'gst-launch-1.0.*port=${MEDIA_AUDIO_PLAYBACK_PORT}' >/dev/null && echo 1 || echo 0)"
+`;
+
+  const { stdout } = await runRemoteCommand(script);
+  const parsed = Object.fromEntries(
+    stdout
+      .trim()
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [key, rawValue] = line.split('=');
+        return [key, parseTruthyFlag(rawValue)];
+      }),
+  );
+
+  return {
+    janus: Boolean(parsed.janus),
+    demoServer: Boolean(parsed.demo_server),
+    videoPipeline: Boolean(parsed.video_pipeline),
+    audioCapture: Boolean(parsed.audio_capture),
+    audioPlayback: Boolean(parsed.audio_playback),
+  };
+}
+
+async function forwardJanusRequest<T = any>(plugin: string, body: Record<string, unknown>) {
+  const baseUrl = `http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}`;
+
+  const createRes = await fetch(baseUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ janus: 'create', transaction: randomTransaction() }),
+  });
+  const createJson = await createRes.json();
+  const sessionId = createJson?.data?.id;
+
+  if (!sessionId) {
+    throw new Error(`Failed to create Janus session: ${JSON.stringify(createJson)}`);
+  }
+
+  let handleId: number | null = null;
+
+  try {
+    const attachRes = await fetch(`${baseUrl}/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        janus: 'attach',
+        plugin,
+        transaction: randomTransaction(),
+      }),
+    });
+    const attachJson = await attachRes.json();
+    handleId = attachJson?.data?.id ?? null;
+
+    if (!handleId) {
+      throw new Error(`Failed to attach Janus plugin: ${JSON.stringify(attachJson)}`);
+    }
+
+    const messageRes = await fetch(`${baseUrl}/${sessionId}/${handleId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        janus: 'message',
+        body,
+        transaction: randomTransaction(),
+      }),
+    });
+    const messageJson = await messageRes.json();
+
+    if (messageJson?.janus === 'error') {
+      throw new Error(messageJson?.error?.reason || JSON.stringify(messageJson));
+    }
+
+    return (messageJson?.plugindata?.data || messageJson?.data || messageJson) as T;
+  } finally {
+    if (handleId) {
+      await fetch(`${baseUrl}/${sessionId}/${handleId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ janus: 'detach', transaction: randomTransaction() }),
+      }).catch(() => undefined);
+    }
+
+    await fetch(`${baseUrl}/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ janus: 'destroy', transaction: randomTransaction() }),
+    }).catch(() => undefined);
+  }
+}
+
+async function getTalkbackForwarders() {
+  try {
+    const response = await forwardJanusRequest<{
+      rtp_forwarders?: Array<{
+        stream_id: number;
+        ip?: string;
+        port?: number;
+      }>;
+    }>('janus.plugin.audiobridge', {
+      request: 'listforwarders',
+      room: MEDIA_AUDIO_BRIDGE_ROOM,
+    });
+
+    return (response.rtp_forwarders || []).filter((forwarder) =>
+      forwarder.ip === MEDIA_AUDIO_BRIDGE_FORWARD_HOST &&
+      Number(forwarder.port) === Number(MEDIA_AUDIO_BRIDGE_FORWARD_PORT),
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function proxyRemoteGet(targetUrl: string) {
+  const response = await fetch(targetUrl);
+  const headers = new Headers();
+  const contentType = response.headers.get('content-type');
+
+  if (contentType) {
+    headers.set('Content-Type', contentType);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
+}
+
+async function proxyJanus(c: any) {
+  const requestUrl = new URL(c.req.url);
+  const suffix = c.req.path.replace('/api/media/janus', '');
+  const targetUrl = new URL(`http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}${suffix}`);
+  targetUrl.search = requestUrl.search;
+
+  const body = ['GET', 'HEAD'].includes(c.req.method) ? undefined : await c.req.arrayBuffer();
+  const response = await fetch(targetUrl.toString(), {
+    method: c.req.method,
+    headers: {
+      'Content-Type': c.req.header('content-type') || 'application/json',
+    },
+    body,
+  });
+
+  const headers = new Headers();
+  const contentType = response.headers.get('content-type');
+
+  if (contentType) {
+    headers.set('Content-Type', contentType);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    headers,
+  });
+}
 
 // Ensure maps directory exists
 if (!fs.existsSync(MAPS_DIR)) {
@@ -105,11 +307,156 @@ app.get('/api/config', (c) => {
     jetsonRosbridgePort: JETSON_ROSBRIDGE_PORT,
     media: {
       janusBaseUrl: `http://${JANUS_HOST}:${JANUS_HTTP_PORT}`,
+      janusApiUrl: '/api/media/janus',
       janusDemoBaseUrl: `http://${JANUS_HOST}:${JANUS_DEMO_PORT}`,
+      adapterScriptUrl: `/api/media/assets/${JANUS_ADAPTER_ASSET}`,
+      janusScriptUrl: `/api/media/assets/${JANUS_SCRIPT_ASSET}`,
       streamingUrl: `http://${JANUS_HOST}:${JANUS_DEMO_PORT}${JANUS_STREAMING_PATH}`,
       audioBridgeUrl: `http://${JANUS_HOST}:${JANUS_DEMO_PORT}${JANUS_AUDIOBRIDGE_PATH}`,
+      preferredVideoStreamId: Number(MEDIA_VIDEO_STREAM_ID) || 0,
+      preferredAudioStreamId: Number(MEDIA_AUDIO_STREAM_ID) || 0,
+      audioBridgeRoom: Number(MEDIA_AUDIO_BRIDGE_ROOM),
+      audioBridgeDisplay: MEDIA_AUDIO_BRIDGE_DISPLAY,
     },
   });
+});
+
+app.get('/api/media/assets/*', async (c) => {
+  const assetPath = c.req.path.replace('/api/media/assets/', '');
+  return proxyRemoteGet(`http://${JANUS_HOST}:${JANUS_DEMO_PORT}/${assetPath}`);
+});
+
+app.all('/api/media/janus', proxyJanus);
+app.all('/api/media/janus/*', proxyJanus);
+
+app.get('/api/media/status', async (c) => {
+  try {
+    const service = await getRemoteMediaStatus();
+    const forwarders = service.janus ? await getTalkbackForwarders() : [];
+
+    return c.json({
+      service,
+      talkbackForward: {
+        active: forwarders.length > 0,
+        streamId: forwarders[0]?.stream_id ?? null,
+      },
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to get media status', details: String(error) }, 500);
+  }
+});
+
+app.post('/api/media/start', async (c) => {
+  try {
+    const script = `
+ensure_shell_process() {
+  local pattern="$1"
+  local logfile="$2"
+  local command="$3"
+  if ! pgrep -f "$pattern" >/dev/null; then
+    nohup bash -lc "$command" >"$logfile" 2>&1 &
+    sleep 1
+  fi
+}
+
+ensure_shell_process "${JANUS_BINARY}" /tmp/webbot-janus.log "${JANUS_BINARY}"
+ensure_shell_process "python3 -m http.server ${JANUS_DEMO_PORT}" /tmp/webbot-janus-http.log "python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}"
+ensure_shell_process "gst-launch-1.0.*port=${MEDIA_AUDIO_CAPTURE_PORT}" /tmp/webbot-audio-capture.log "gst-launch-1.0 -v alsasrc device=\\"${MEDIA_AUDIO_CAPTURE_DEVICE}\\" ! audioconvert ! audioresample ! opusenc ! rtpopuspay ! udpsink host=127.0.0.1 port=${MEDIA_AUDIO_CAPTURE_PORT}"
+ensure_shell_process "gst-launch-1.0.*port=${MEDIA_AUDIO_PLAYBACK_PORT}" /tmp/webbot-audio-playback.log "gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT} caps=\\"application/x-rtp, media=(string)audio, clock-rate=(int)48000, encoding-name=(string)OPUS, payload=(int)111\\" ! queue ! rtpopusdepay ! opusdec ! audioconvert ! audioresample ! alsasink device=${MEDIA_AUDIO_PLAYBACK_DEVICE}"
+ensure_shell_process "gst-launch-1.0.*port=${MEDIA_VIDEO_PORT}" /tmp/webbot-video.log "gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE} do-timestamp=true ! jpegdec ! nvvideoconvert ! 'video/x-raw,format=I420' ! x264enc bitrate=${MEDIA_VIDEO_BITRATE} tune=zerolatency speed-preset=ultrafast ! rtph264pay config-interval=1 pt=96 ! udpsink host=127.0.0.1 port=${MEDIA_VIDEO_PORT}"
+`;
+
+    await runRemoteCommand(script);
+    const service = await getRemoteMediaStatus();
+
+    return c.json({ status: 'started', service });
+  } catch (error) {
+    return c.json({ error: 'Failed to start media services', details: String(error) }, 500);
+  }
+});
+
+app.post('/api/media/stop', async (c) => {
+  try {
+    const forwarders = await getTalkbackForwarders();
+
+    for (const forwarder of forwarders) {
+      await forwardJanusRequest('janus.plugin.audiobridge', {
+        request: 'stop_rtp_forward',
+        room: MEDIA_AUDIO_BRIDGE_ROOM,
+        stream_id: forwarder.stream_id,
+      }).catch(() => undefined);
+    }
+
+    const script = `
+pkill -f "${JANUS_BINARY}" || true
+pkill -f "python3 -m http.server ${JANUS_DEMO_PORT}" || true
+pkill -f "gst-launch-1.0.*port=${MEDIA_AUDIO_CAPTURE_PORT}" || true
+pkill -f "gst-launch-1.0.*port=${MEDIA_AUDIO_PLAYBACK_PORT}" || true
+pkill -f "gst-launch-1.0.*port=${MEDIA_VIDEO_PORT}" || true
+`;
+
+    await runRemoteCommand(script);
+
+    return c.json({ status: 'stopped' });
+  } catch (error) {
+    return c.json({ error: 'Failed to stop media services', details: String(error) }, 500);
+  }
+});
+
+app.post('/api/media/talkback/forward/start', async (c) => {
+  try {
+    const existingForwarders = await getTalkbackForwarders();
+    if (existingForwarders.length > 0) {
+      return c.json({
+        status: 'already_running',
+        streamId: existingForwarders[0].stream_id,
+      });
+    }
+
+    const response = await forwardJanusRequest<{
+      stream_id: number;
+      port: number;
+      host: string;
+    }>('janus.plugin.audiobridge', {
+      request: 'rtp_forward',
+      room: MEDIA_AUDIO_BRIDGE_ROOM,
+      secret: MEDIA_AUDIO_BRIDGE_SECRET,
+      host: MEDIA_AUDIO_BRIDGE_FORWARD_HOST,
+      port: MEDIA_AUDIO_BRIDGE_FORWARD_PORT,
+      codec: 'opus',
+      ptype: 111,
+    });
+
+    return c.json({
+      status: 'started',
+      streamId: response.stream_id,
+      host: response.host,
+      port: response.port,
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to start talkback forwarder', details: String(error) }, 500);
+  }
+});
+
+app.post('/api/media/talkback/forward/stop', async (c) => {
+  try {
+    const forwarders = await getTalkbackForwarders();
+
+    for (const forwarder of forwarders) {
+      await forwardJanusRequest('janus.plugin.audiobridge', {
+        request: 'stop_rtp_forward',
+        room: MEDIA_AUDIO_BRIDGE_ROOM,
+        stream_id: forwarder.stream_id,
+      });
+    }
+
+    return c.json({
+      status: 'stopped',
+      stopped: forwarders.map((forwarder) => forwarder.stream_id),
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to stop talkback forwarder', details: String(error) }, 500);
+  }
 });
 
 // Check rosbridge status

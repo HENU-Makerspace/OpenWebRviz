@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { MediaPanel } from './components/MediaPanel';
+import { MediaViewport } from './components/MediaViewport';
 import { MapCanvas } from './components/MapCanvas';
 import { ImageOverlay } from './components/ImageOverlay';
 import { LayerControl, LayerControlProvider, useLayers } from './components/LayerControl';
 import { DebugPanel } from './hooks/usePerformanceMonitor';
 import { useRosConnection } from './hooks/useRosConnection';
+import { useRobotMedia } from './hooks/useRobotMedia';
 import { useKeyboardTeleop } from './hooks/useKeyboardTeleop';
 import { ModeProvider, useMode } from './hooks/useMode';
 import { useSlamControl, useMapManager, useNetworkInfo } from './hooks/useSlamControl';
@@ -17,9 +19,16 @@ interface ServerConfig {
   jetsonRosbridgePort: number;
   media: {
     janusBaseUrl: string;
+    janusApiUrl: string;
     janusDemoBaseUrl: string;
+    adapterScriptUrl: string;
+    janusScriptUrl: string;
     streamingUrl: string;
     audioBridgeUrl: string;
+    preferredVideoStreamId: number;
+    preferredAudioStreamId: number;
+    audioBridgeRoom: number;
+    audioBridgeDisplay: string;
   };
 }
 
@@ -381,6 +390,7 @@ function NetworkPanel() {
 function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
   const config = useServerConfig();
+  const media = useRobotMedia(config?.media || null);
   const wsUrl = config ? `ws://${config.jetsonHost}:${config.jetsonRosbridgePort}` : '';
   const { ros, isConnected } = useRosConnection(wsUrl);
   const { subscriptionSettings } = useLayers();
@@ -461,7 +471,7 @@ function AppContent() {
               wsUrl={wsUrl}
             />
           )}
-          {config?.media && <MediaPanel media={config.media} />}
+          {config?.media && <MediaPanel media={media} />}
           <LayerControl />
           <NetworkPanel />
         </aside>
@@ -475,7 +485,14 @@ function AppContent() {
             setNavClickMode={setNavClickMode}
             selectedMap={selectedMap}
           />
-          <ImageOverlay ros={ros} />
+          <MediaViewport
+            videoRef={media.videoRef}
+            videoConnected={media.videoConnected}
+            audioMonitoring={media.audioConnected}
+            talkbackActive={media.talkbackActive}
+            onCloseVideo={media.stopVideo}
+          />
+          <ImageOverlay ros={ros} hidden={media.videoConnected} />
         </main>
       </div>
 
