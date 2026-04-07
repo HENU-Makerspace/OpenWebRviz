@@ -74,17 +74,6 @@ def discover_server_url():
     if result['url']:
         return result['url']
 
-    # Fallback: try localhost for testing
-    try:
-        resp = requests.get('http://localhost:4001/api/network', timeout=1)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get('ips') and len(data['ips']) > 0:
-                server_ip = data['ips'][0]
-                return f'http://{server_ip}:4001'
-    except:
-        pass
-
     return None
 
 
@@ -112,16 +101,9 @@ class SystemManager(Node):
         self.stand_nav_launch_file = self.get_parameter('stand_nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
 
-        # Discover server URL dynamically by scanning LAN, retry every 3s if not found
-        self.server_url = None
-        while self.server_url is None:
-            discovered = discover_server_url()
-            if discovered:
-                self.server_url = discovered
-                self.get_logger().info(f'Server URL discovered: {self.server_url}')
-            else:
-                self.get_logger().warn('Server not found in LAN, retrying in 3s...')
-                time.sleep(3)
+        # Use hardcoded server URL from parameter
+        self.server_url = self.get_parameter('server_url').value
+        self.get_logger().info(f'Server URL: {self.server_url}')
 
         os.makedirs(self.maps_dir, exist_ok=True)
 
