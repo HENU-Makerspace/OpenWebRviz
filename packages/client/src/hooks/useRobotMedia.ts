@@ -405,11 +405,9 @@ export function useRobotMedia(config: MediaConfig | null) {
         if (jsep) {
           activeHandle.createAnswer({
             jsep,
-            media: {
-              audioSend: false,
-              videoSend: false,
-              data: false,
-            },
+            tracks: [
+              { type: 'data' },
+            ],
             success: (answerJsep: unknown) => {
               activeHandle.send({
                 message: { request: 'start' },
@@ -563,11 +561,9 @@ export function useRobotMedia(config: MediaConfig | null) {
           if (joined && !talkbackJoinedRef.current) {
             talkbackJoinedRef.current = true;
             handle.createOffer({
-              media: {
-                video: false,
-                audioRecv: false,
-                audioSend: true,
-              },
+              tracks: [
+                { type: 'audio', capture: true, recv: true },
+              ],
               success: (offerJsep: unknown) => {
                 handle.send({
                   message: {

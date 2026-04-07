@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { exec, execFile, execSync } from 'child_process';
+import { exec, execFile, execSync, spawn } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -113,23 +113,53 @@ function shellQuote(value: string) {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-async function runRemoteCommand(command: string) {
-  const sshCommand = [
-    'ssh',
-    '-o', 'BatchMode=yes',
-    '-o', 'ConnectTimeout=5',
-    `${JETSON_USER}@${JETSON_HOST}`,
-    'bash',
-    '-lc',
-    shellQuote(command),
-  ].join(' ');
+function runRemoteScript(args: string[], script: string) {
+  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn('ssh', [
+      '-o', 'BatchMode=yes',
+      '-o', 'ConnectTimeout=5',
+      `${JETSON_USER}@${JETSON_HOST}`,
+      ...args,
+    ], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
 
-  return execAsync(sshCommand);
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      reject(error);
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+
+      reject(new Error(stderr || `Remote script failed with exit code ${code}`));
+    });
+
+    child.stdin.write(script);
+    child.stdin.end();
+  });
+}
+
+async function runRemoteCommand(command: string) {
+  return runRemoteScript(['bash', '-s'], command);
+}
+
+async function runRemotePython(script: string) {
+  return runRemoteScript(['python3', '-'], script);
 }
 
 async function getRemoteMediaStatus() {
   const script = `
-python3 - <<'PY'
 import json
 import os
 import subprocess
@@ -155,13 +185,12 @@ print(json.dumps({
     "janus": running(${JSON.stringify(JANUS_BINARY)}),
     "demoServer": running(${JSON.stringify(`python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`)}),
     "videoPipeline": running(${JSON.stringify(`gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE}`)}),
-    "audioCapture": running(${JSON.stringify(`gst-launch-1.0 -v alsasrc device="${MEDIA_AUDIO_CAPTURE_DEVICE}"`)}),
+    "audioCapture": running(${JSON.stringify(`gst-launch-1.0 -v alsasrc device=${MEDIA_AUDIO_CAPTURE_DEVICE}`)}),
     "audioPlayback": running(${JSON.stringify(`gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT}`)}),
 }))
-PY
 `;
 
-  const { stdout } = await runRemoteCommand(script);
+  const { stdout } = await runRemotePython(script);
   return JSON.parse(stdout.trim());
 }
 
@@ -394,7 +423,7 @@ app.post('/api/media/start', async (c) => {
       },
       {
         name: 'audioCapture',
-        pattern: `gst-launch-1.0 -v alsasrc device="${MEDIA_AUDIO_CAPTURE_DEVICE}"`,
+        pattern: `gst-launch-1.0 -v alsasrc device=${MEDIA_AUDIO_CAPTURE_DEVICE}`,
         command: `gst-launch-1.0 -v alsasrc device="${MEDIA_AUDIO_CAPTURE_DEVICE}" ! audioconvert ! audioresample ! opusenc ! rtpopuspay ! udpsink host=127.0.0.1 port=${MEDIA_AUDIO_CAPTURE_PORT}`,
         log: '/tmp/webbot-audio-capture.log',
       },
@@ -413,7 +442,6 @@ app.post('/api/media/start', async (c) => {
     ];
 
     const script = `
-python3 - <<'PY'
 import json
 import os
 import subprocess
@@ -460,10 +488,9 @@ for spec in specs:
     }
 
 print(json.dumps(result))
-PY
 `;
 
-    const { stdout } = await runRemoteCommand(script);
+    const { stdout } = await runRemotePython(script);
     const service = await getRemoteMediaStatus();
 
     return c.json({ status: 'started', details: stdout.trim(), service });
@@ -486,14 +513,37 @@ app.post('/api/media/stop', async (c) => {
     }
 
     const script = `
-pkill -f ${shellQuote(JANUS_BINARY)} || true
-pkill -f ${shellQuote(`python3 -m http.server ${JANUS_DEMO_PORT}`)} || true
-pkill -f ${shellQuote(`gst-launch-1.0.*port=${MEDIA_AUDIO_CAPTURE_PORT}`)} || true
-pkill -f ${shellQuote(`gst-launch-1.0.*port=${MEDIA_AUDIO_PLAYBACK_PORT}`)} || true
-pkill -f ${shellQuote(`gst-launch-1.0.*port=${MEDIA_VIDEO_PORT}`)} || true
+import os
+import signal
+import subprocess
+
+self_pid = os.getpid()
+parent_pid = os.getppid()
+patterns = [
+    ${JSON.stringify(JANUS_BINARY)},
+    ${JSON.stringify(`python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`)},
+    ${JSON.stringify(`gst-launch-1.0 -v alsasrc device=${MEDIA_AUDIO_CAPTURE_DEVICE}`)},
+    ${JSON.stringify(`gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT}`)},
+    ${JSON.stringify(`gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE}`)},
+]
+
+output = subprocess.check_output(["ps", "-eo", "pid,args"], text=True)
+for line in output.splitlines()[1:]:
+    parts = line.strip().split(None, 1)
+    if len(parts) < 2:
+        continue
+    pid = int(parts[0])
+    args = parts[1]
+    if pid in (self_pid, parent_pid):
+        continue
+    if any(pattern in args for pattern in patterns):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
 `;
 
-    await runRemoteCommand(script);
+    await runRemotePython(script);
 
     return c.json({ status: 'stopped' });
   } catch (error) {

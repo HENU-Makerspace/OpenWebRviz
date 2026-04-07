@@ -34,7 +34,7 @@ media:
   streaming_path: "/demos/streaming.html#"
   audiobridge_path: "/demos/audiobridge.html"
   audio_capture_device: "plughw:CARD=UACDemoV10,DEV=0"
-  audio_playback_device: "hw:2,0"
+  audio_playback_device: "plughw:CARD=UACDemoV10,DEV=0"
   audio_capture_port: 5005
   audio_playback_port: 5006
   preferred_audio_stream_id: 99
