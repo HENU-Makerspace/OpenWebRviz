@@ -91,7 +91,7 @@ class SystemManager(Node):
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
         self.declare_parameter('stand_nav_launch_file', 'stand_nav_launch.py')
         self.declare_parameter('nav2_params_file', '/home/nvidia/ros2_ws/my_nav2_params.yaml')
-        self.declare_parameter('server_url', 'http://192.168.1.34:4001')
+        self.declare_parameter('server_url', 'http://182.43.86.126:4001')
 
         self.maps_dir = self.get_parameter('maps_dir').value
         self.slam_package = self.get_parameter('slam_package').value

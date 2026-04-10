@@ -17,6 +17,7 @@ interface ServerConfig {
   serverUrl: string;
   jetsonHost: string;
   jetsonRosbridgePort: number;
+  rosbridgeUrl: string;
   media: {
     janusBaseUrl: string;
     janusApiUrl: string;
@@ -390,7 +391,7 @@ function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
   const config = useServerConfig();
   const media = useRobotMedia(config?.media || null);
-  const wsUrl = config ? `ws://${config.jetsonHost}:${config.jetsonRosbridgePort}` : '';
+  const wsUrl = config?.rosbridgeUrl || '';
   const { ros, isConnected } = useRosConnection(wsUrl);
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();

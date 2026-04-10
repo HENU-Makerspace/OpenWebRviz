@@ -43,7 +43,7 @@ def generate_launch_description():
 
     server_url_arg = DeclareLaunchArgument(
         'server_url',
-        default_value='http://192.168.1.34:4001',
+        default_value='http://182.43.86.126:4001',
         description='Server URL for map upload'
     )
 

@@ -103,6 +103,7 @@ const MEDIA_AUDIO_BRIDGE_SECRET = config?.media?.audiobridge_secret || 'adminpwd
 const MEDIA_AUDIO_BRIDGE_FORWARD_HOST = config?.media?.audiobridge_forward_host || '127.0.0.1';
 const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port || MEDIA_AUDIO_PLAYBACK_PORT;
 const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
+const FRONTEND_WS_URL = config?.frontend?.ws_url || process.env.FRONTEND_WS_URL || '';
 
 console.log('[Config] Loaded config:', {
   SERVER_HOST,
@@ -385,6 +386,7 @@ app.get('/api/config', (c) => {
     serverUrl: `http://${SERVER_HOST}:${SERVER_PORT}`,
     jetsonHost: JETSON_HOST,
     jetsonRosbridgePort: JETSON_ROSBRIDGE_PORT,
+    rosbridgeUrl: FRONTEND_WS_URL || `ws://${JETSON_HOST}:${JETSON_ROSBRIDGE_PORT}`,
     media: {
       janusBaseUrl: `http://${JANUS_HOST}:${JANUS_HTTP_PORT}`,
       janusApiUrl: `http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}`,
