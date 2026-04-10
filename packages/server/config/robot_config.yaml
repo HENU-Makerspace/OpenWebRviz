@@ -1,12 +1,13 @@
 # 机器人与服务器配置文件
 # 服务器配置
 server:
-  host: "192.168.1.34"
+  host: "182.43.86.126"
   port: 4001
 
 # Jetson 配置
+# 注意：这里要填写机器人实际可达的地址，不一定是云服务器 IP。
 jetson:
-  host: "192.168.1.58"
+  host: "100.108.168.47"
   user: "nvidia"
   maps_dir: "/home/nvidia/maps"
   rosbridge_port: 9090
@@ -18,15 +19,16 @@ rosbridge:
 
 # 前端配置
 frontend:
-  ws_url: "ws://192.168.1.58:9090"
-  api_url: "http://192.168.1.58:4001"
+  api_url: "http://182.43.86.126:4001"
+  # 推荐在云服务器/Nginx 上反向代理到 rosbridge，再让前端走这个公网地址。
+  ws_url: "ws://182.43.86.126/rosbridge"
 
 # WebRTC / Janus 媒体配置
 media:
   service_name: "webbot-media.service"
   service_script_path: "/home/nvidia/bin/webbot-media.sh"
   service_unit_path: "/home/nvidia/.config/systemd/user/webbot-media.service"
-  janus_host: "192.168.1.58"
+  janus_host: "182.43.86.126"
   janus_http_port: 8088
   janus_api_path: "/janus"
   janus_demo_port: 8000
