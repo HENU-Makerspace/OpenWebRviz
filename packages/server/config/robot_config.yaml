@@ -21,7 +21,7 @@ rosbridge:
 frontend:
   api_url: "http://182.43.86.126:4001"
   # 推荐在云服务器/Nginx 上反向代理到 rosbridge，再让前端走这个公网地址。
-  ws_url: "ws://182.43.86.126/rosbridge"
+  ws_url: "ws://182.43.86.126/rosbridge/"
 
 # WebRTC / Janus 媒体配置
 media:
