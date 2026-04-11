@@ -1,17 +1,14 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { exec, execFile, execSync, spawn } from 'child_process';
+import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
 
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
 const app = new Hono();
 
 const MAPS_DIR = path.join(process.cwd(), 'maps');
-const SLAM_PROCESS_FILE = path.join(process.cwd(), '.slam_pid');
-const ROSBRIDGE_PROCESS_FILE = path.join(process.cwd(), '.rosbridge_pid');
 
 // Config file path
 const CONFIG_PATH = path.join(process.cwd(), 'config', 'robot_config.yaml');
@@ -65,8 +62,6 @@ const SERVER_PORT = config?.server?.port || process.env.SERVER_PORT || 4001;
 
 // Jetson configuration
 const JETSON_HOST = config?.jetson?.host || process.env.JETSON_HOST || '192.168.1.58';
-const JETSON_USER = config?.jetson?.user || process.env.JETSON_USER || 'nvidia';
-const JETSON_MAPS_DIR = config?.jetson?.maps_dir || '/home/nvidia/maps';
 const JETSON_ROSBRIDGE_PORT = config?.jetson?.rosbridge_port || 9090;
 const JANUS_HOST = config?.media?.janus_host || JETSON_HOST;
 const JANUS_HTTP_PORT = config?.media?.janus_http_port || 8088;
@@ -74,28 +69,11 @@ const JANUS_API_PATH = config?.media?.janus_api_path || '/janus';
 const JANUS_DEMO_PORT = config?.media?.janus_demo_port || 8000;
 const JANUS_STREAMING_PATH = config?.media?.streaming_path || '/demos/streaming.html#';
 const JANUS_AUDIOBRIDGE_PATH = config?.media?.audiobridge_path || '/demos/audiobridge.html';
-const JANUS_BINARY = config?.media?.janus_binary || '/opt/janus/bin/janus';
-const JANUS_HTML_DIR = config?.media?.janus_html_dir || '/opt/janus/share/janus/html';
 const JANUS_ADAPTER_ASSET = config?.media?.adapter_asset || 'adapter.min.js';
 const JANUS_SCRIPT_ASSET = config?.media?.janus_script_asset || 'janus.js';
 const LOCAL_JANUS_GATEWAY_DIR = config?.media?.local_janus_gateway_dir || path.join(process.cwd(), '..', '..', 'janus-gateway');
 const LOCAL_JANUS_DEMOS_DIR = path.join(LOCAL_JANUS_GATEWAY_DIR, 'html', 'demos');
-const LOCAL_MEDIA_SYSTEMD_DIR = path.join(process.cwd(), 'systemd');
-const LOCAL_MEDIA_SERVICE_SCRIPT_TEMPLATE_PATH = path.join(LOCAL_MEDIA_SYSTEMD_DIR, 'webbot-media.sh');
-const LOCAL_MEDIA_SERVICE_UNIT_TEMPLATE_PATH = path.join(LOCAL_MEDIA_SYSTEMD_DIR, 'webbot-media.service');
-const MEDIA_AUDIO_CAPTURE_DEVICE = config?.media?.audio_capture_device || 'plughw:CARD=UACDemoV10,DEV=0';
-const MEDIA_AUDIO_PLAYBACK_DEVICE = config?.media?.audio_playback_device || 'hw:0,0';
-const MEDIA_AUDIO_CAPTURE_PORT = config?.media?.audio_capture_port || 5005;
 const MEDIA_AUDIO_PLAYBACK_PORT = config?.media?.audio_playback_port || 5006;
-const MEDIA_VIDEO_DEVICE = config?.media?.video_device || '/dev/video0';
-const MEDIA_VIDEO_PORT = config?.media?.video_port || 8004;
-const MEDIA_SERVICE_NAME = config?.media?.service_name || 'webbot-media.service';
-const MEDIA_SERVICE_SCRIPT_PATH = config?.media?.service_script_path || `/home/${JETSON_USER}/bin/webbot-media.sh`;
-const MEDIA_SERVICE_UNIT_PATH = config?.media?.service_unit_path || `/home/${JETSON_USER}/.config/systemd/user/webbot-media.service`;
-const MEDIA_VIDEO_WIDTH = config?.media?.video_width || 1280;
-const MEDIA_VIDEO_HEIGHT = config?.media?.video_height || 720;
-const MEDIA_VIDEO_FRAMERATE = config?.media?.video_framerate || '30/1';
-const MEDIA_VIDEO_BITRATE = config?.media?.video_bitrate || 4000;
 const MEDIA_VIDEO_STREAM_ID = config?.media?.preferred_video_stream_id || 0;
 const MEDIA_AUDIO_STREAM_ID = config?.media?.preferred_audio_stream_id || 0;
 const MEDIA_AUDIO_BRIDGE_ROOM = config?.media?.audiobridge_room || 1234;
@@ -117,116 +95,6 @@ console.log('[Config] Loaded config:', {
 
 function randomTransaction() {
   return Math.random().toString(36).slice(2, 12);
-}
-
-function shellQuote(value: string) {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function runRemoteScript(args: string[], script: string) {
-  return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-    const child = spawn('ssh', [
-      '-o', 'BatchMode=yes',
-      '-o', 'ConnectTimeout=5',
-      `${JETSON_USER}@${JETSON_HOST}`,
-      ...args,
-    ], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on('error', (error) => {
-      reject(error);
-    });
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve({ stdout, stderr });
-        return;
-      }
-
-      reject(new Error(stderr || `Remote script failed with exit code ${code}`));
-    });
-
-    child.stdin.write(script);
-    child.stdin.end();
-  });
-}
-
-async function runRemoteCommand(command: string) {
-  return runRemoteScript(['bash', '-s'], command);
-}
-
-async function runRemotePython(script: string) {
-  return runRemoteScript(['python3', '-'], script);
-}
-
-async function getRemoteMediaStatus() {
-  const script = `
-import json
-import os
-import subprocess
-
-self_pid = os.getpid()
-parent_pid = os.getppid()
-
-def running(pattern: str) -> bool:
-    output = subprocess.check_output(["ps", "-eo", "pid,args"], text=True)
-    for line in output.splitlines()[1:]:
-        parts = line.strip().split(None, 1)
-        if len(parts) < 2:
-            continue
-        pid = int(parts[0])
-        args = parts[1]
-        if pid in (self_pid, parent_pid):
-            continue
-        if pattern in args:
-            return True
-    return False
-
-print(json.dumps({
-    "serviceUnit": subprocess.run(["systemctl", "--user", "is-active", ${JSON.stringify(MEDIA_SERVICE_NAME)}], capture_output=True, text=True).stdout.strip() == "active",
-    "janus": running(${JSON.stringify(JANUS_BINARY)}),
-    "demoServer": running(${JSON.stringify(`python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}`)}),
-    "videoPipeline": running(${JSON.stringify(`gst-launch-1.0 v4l2src device=${MEDIA_VIDEO_DEVICE}`)}),
-    "audioCapture": running(${JSON.stringify(`gst-launch-1.0 -v alsasrc device=${MEDIA_AUDIO_CAPTURE_DEVICE}`)}),
-    "audioPlayback": running(${JSON.stringify(`gst-launch-1.0 -v udpsrc port=${MEDIA_AUDIO_PLAYBACK_PORT}`)}),
-}))
-`;
-
-  const { stdout } = await runRemotePython(script);
-  return JSON.parse(stdout.trim());
-}
-
-async function syncRemoteMediaServiceFiles() {
-  const serviceScript = fs.readFileSync(LOCAL_MEDIA_SERVICE_SCRIPT_TEMPLATE_PATH, 'utf-8');
-  const serviceUnit = fs.readFileSync(LOCAL_MEDIA_SERVICE_UNIT_TEMPLATE_PATH, 'utf-8');
-
-  const script = `
-from pathlib import Path
-import os
-
-files = {
-    ${JSON.stringify(MEDIA_SERVICE_SCRIPT_PATH)}: ${JSON.stringify(serviceScript)},
-    ${JSON.stringify(MEDIA_SERVICE_UNIT_PATH)}: ${JSON.stringify(serviceUnit)},
-}
-
-for file_path, content in files.items():
-    path = Path(file_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-
-os.chmod(${JSON.stringify(MEDIA_SERVICE_SCRIPT_PATH)}, 0o755)
-`;
-
-  await runRemotePython(script);
 }
 
 async function forwardJanusRequest<T = any>(plugin: string, body: Record<string, unknown>) {
@@ -296,6 +164,35 @@ async function forwardJanusRequest<T = any>(plugin: string, body: Record<string,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ janus: 'destroy', transaction: randomTransaction() }),
     }).catch(() => undefined);
+  }
+}
+
+async function isJanusAvailable() {
+  const baseUrl = `http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}`;
+
+  try {
+    const createRes = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ janus: 'create', transaction: randomTransaction() }),
+    });
+    const createText = await createRes.text();
+    const createJson = createText ? JSON.parse(createText) : null;
+    const sessionId = createJson?.data?.id;
+
+    if (!sessionId) {
+      return false;
+    }
+
+    await fetch(`${baseUrl}/${sessionId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ janus: 'destroy', transaction: randomTransaction() }),
+    }).catch(() => undefined);
+
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -427,11 +324,11 @@ app.all('/api/media/janus/*', proxyJanus);
 
 app.get('/api/media/status', async (c) => {
   try {
-    const service = await getRemoteMediaStatus();
-    const forwarders = service.janus ? await getTalkbackForwarders() : [];
+    const janus = await isJanusAvailable();
+    const forwarders = janus ? await getTalkbackForwarders() : [];
 
     return c.json({
-      service,
+      janus,
       talkbackForward: {
         active: forwarders.length > 0,
         streamId: forwarders[0]?.stream_id ?? null,
@@ -439,48 +336,6 @@ app.get('/api/media/status', async (c) => {
     });
   } catch (error) {
     return c.json({ error: 'Failed to get media status', details: String(error) }, 500);
-  }
-});
-
-app.post('/api/media/start', async (c) => {
-  try {
-    await syncRemoteMediaServiceFiles();
-
-    const { stdout } = await runRemoteCommand(`
-systemctl --user daemon-reload
-systemctl --user enable ${shellQuote(MEDIA_SERVICE_NAME)}
-systemctl --user restart ${shellQuote(MEDIA_SERVICE_NAME)}
-systemctl --user is-active ${shellQuote(MEDIA_SERVICE_NAME)}
-`);
-    const service = await getRemoteMediaStatus();
-
-    return c.json({ status: 'started', details: stdout.trim(), service });
-  } catch (error) {
-    return c.json({ error: 'Failed to start media services', details: String(error) }, 500);
-  }
-});
-
-app.post('/api/media/stop', async (c) => {
-  try {
-    const forwarders = await getTalkbackForwarders();
-
-    for (const forwarder of forwarders) {
-      await forwardJanusRequest('janus.plugin.audiobridge', {
-        request: 'stop_rtp_forward',
-        room: MEDIA_AUDIO_BRIDGE_ROOM,
-        secret: MEDIA_AUDIO_BRIDGE_SECRET,
-        stream_id: forwarder.stream_id,
-      }).catch(() => undefined);
-    }
-
-    await runRemoteCommand(`
-systemctl --user stop ${shellQuote(MEDIA_SERVICE_NAME)} || true
-systemctl --user reset-failed ${shellQuote(MEDIA_SERVICE_NAME)} || true
-`);
-
-    return c.json({ status: 'stopped' });
-  } catch (error) {
-    return c.json({ error: 'Failed to stop media services', details: String(error) }, 500);
   }
 });
 
@@ -538,48 +393,6 @@ app.post('/api/media/talkback/forward/stop', async (c) => {
     });
   } catch (error) {
     return c.json({ error: 'Failed to stop talkback forwarder', details: String(error) }, 500);
-  }
-});
-
-// Check rosbridge status
-app.get('/api/rosbridge/status', async (c) => {
-  try {
-    const { stdout } = await execAsync('pgrep -f rosbridge_websocket || true');
-    const isRunning = stdout.trim().length > 0;
-    return c.json({ running: isRunning });
-  } catch {
-    return c.json({ running: false });
-  }
-});
-
-// Start rosbridge
-app.post('/api/rosbridge/start', async (c) => {
-  try {
-    // Check if already running
-    const { stdout } = await execAsync('pgrep -f rosbridge_websocket || true');
-    if (stdout.trim().length > 0) {
-      return c.json({ status: 'already_running' });
-    }
-
-    // Start rosbridge
-    const cmd = 'ros2 launch rosbridge_server rosbridge_websocket_launch.xml &';
-    exec(cmd);
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    return c.json({ status: 'started' });
-  } catch (error) {
-    return c.json({ error: 'Failed to start rosbridge', details: String(error) }, 500);
-  }
-});
-
-// Stop rosbridge
-app.post('/api/rosbridge/stop', async (c) => {
-  try {
-    exec('pkill -f rosbridge_websocket');
-    return c.json({ status: 'stopped' });
-  } catch {
-    return c.json({ status: 'error' });
   }
 });
 
@@ -732,160 +545,6 @@ app.get('/api/slam-config', async (c) => {
   }
 });
 
-// Start SLAM
-app.post('/api/slam/start', async (c) => {
-  try {
-    const body = await c.req.json();
-
-    // Find config file - use local first, then system
-    let configPath = body.configPath;
-    if (!configPath || configPath === 'default') {
-      const localConfig = path.join(process.cwd(), 'config', 'slam_default.yaml');
-      if (fs.existsSync(localConfig)) {
-        configPath = localConfig;
-      } else {
-        configPath = '/opt/ros/humble/share/slam_toolbox/params/mapper_params_online_async.yaml';
-      }
-    }
-
-    // Kill existing slam if running
-    if (fs.existsSync(SLAM_PROCESS_FILE)) {
-      const pid = fs.readFileSync(SLAM_PROCESS_FILE, 'utf-8').trim();
-      try {
-        exec(`kill ${pid}`);
-        console.log(`Killed existing SLAM process ${pid}`);
-      } catch {}
-    }
-
-    // Start slam_toolbox
-    const cmd = `ros2 launch slam_toolbox online_async_launch.py params_file:=${configPath} use_sim_time:=true &`;
-    console.log('Starting SLAM with config:', configPath);
-    exec(cmd);
-
-    // Save PID
-    const { stdout } = await execAsync('pgrep -f "slam_toolbox" | head -1');
-    const pid = stdout.trim();
-    if (pid) {
-      fs.writeFileSync(SLAM_PROCESS_FILE, pid);
-    }
-
-    return c.json({ status: 'started', pid });
-  } catch (error) {
-    return c.json({ error: 'Failed to start SLAM', details: String(error) }, 500);
-  }
-});
-
-// Stop SLAM
-app.post('/api/slam/stop', async (c) => {
-  try {
-    if (fs.existsSync(SLAM_PROCESS_FILE)) {
-      const pid = fs.readFileSync(SLAM_PROCESS_FILE, 'utf-8').trim();
-      try {
-        exec(`kill ${pid}`);
-      } catch {}
-      fs.unlinkSync(SLAM_PROCESS_FILE);
-    }
-
-    // Also try to kill by process name
-    try {
-      exec('pkill -f slam_toolbox');
-    } catch {}
-
-    return c.json({ status: 'stopped' });
-  } catch (error) {
-    return c.json({ error: 'Failed to stop SLAM', details: String(error) }, 500);
-  }
-});
-
-// Save map
-app.post('/api/maps/save', async (c) => {
-  try {
-    const body = await c.req.json();
-    const mapName = body.name || `map_${Date.now()}`;
-    const mapYamlPath = path.join(MAPS_DIR, `${mapName}.yaml`);
-    const mapPgmPath = path.join(MAPS_DIR, `${mapName}.pgm`);
-
-    // Use map_saver_cli to save the map
-    const cmd = `ros2 run nav2_map_server map_saver_cli -f ${path.join(MAPS_DIR, mapName)}`;
-    try {
-      execSync(cmd, { stdio: 'inherit' });
-    } catch (e) {
-      console.error('Map saver error:', e);
-    }
-
-    // Wait a bit for map to be saved
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Check if files exist
-    const yamlExists = fs.existsSync(mapYamlPath);
-    const pgmExists = fs.existsSync(mapPgmPath);
-
-    if (!yamlExists) {
-      return c.json({ error: 'Failed to save map files' }, 500);
-    }
-
-    return c.json({
-      status: 'saved',
-      map: {
-        name: mapName,
-        yamlPath: mapYamlPath,
-        pgmPath: mapPgmPath,
-      }
-    });
-  } catch (error) {
-    return c.json({ error: 'Failed to save map', details: String(error) }, 500);
-  }
-});
-
-// Sync map from Jetson to server
-app.post('/api/maps/sync-from-robot', async (c) => {
-  console.log('[sync-from-robot] Received request, JETSON_HOST:', JETSON_HOST, 'JETSON_USER:', JETSON_USER);
-  try {
-    const body = await c.req.json();
-    const mapName = body.name;
-    console.log('[sync-from-robot] Map name:', mapName);
-
-    if (!mapName) {
-      return c.json({ error: 'Map name is required' }, 400);
-    }
-
-    const localYamlPath = path.join(MAPS_DIR, `${mapName}.yaml`);
-    const localPgmPath = path.join(MAPS_DIR, `${mapName}.pgm`);
-
-    // Check if already exists locally
-    if (fs.existsSync(localYamlPath) && fs.existsSync(localPgmPath)) {
-      console.log('[sync-from-robot] Map already exists locally');
-      return c.json({
-        status: 'exists',
-        map: { name: mapName, yamlPath: localYamlPath, pgmPath: localPgmPath }
-      });
-    }
-
-    // Copy from Jetson using scp
-    const remotePath = `${JETSON_USER}@${JETSON_HOST}:${JETSON_MAPS_DIR}/${mapName}`;
-    console.log('[sync-from-robot] SCP from:', remotePath);
-
-    try {
-      // Copy YAML file
-      await execAsync(`scp ${remotePath}.yaml ${localYamlPath}`);
-      // Copy PGM file
-      await execAsync(`scp ${remotePath}.pgm ${localPgmPath}`);
-      console.log('[sync-from-robot] SCP completed');
-    } catch (e) {
-      console.error('[sync-from-robot] SCP error:', e);
-      return c.json({ error: 'Failed to copy map from robot', details: String(e) }, 500);
-    }
-
-    return c.json({
-      status: 'synced',
-      map: { name: mapName, yamlPath: localYamlPath, pgmPath: localPgmPath }
-    });
-  } catch (error) {
-    console.error('[sync-from-robot] Error:', error);
-    return c.json({ error: 'Failed to sync map', details: String(error) }, 500);
-  }
-});
-
 // Upload map from Jetson via HTTP (JSON with base64)
 app.post('/api/maps/upload', async (c) => {
   try {
@@ -965,197 +624,6 @@ app.get('/api/slam/status', async (c) => {
     return c.json({ running: slamRunning, tmux: tmuxRunning });
   } catch {
     return c.json({ running: false, tmux: false });
-  }
-});
-
-// Start with tmux session
-app.post('/api/slam/start-tmux', async (c) => {
-  try {
-    const body = await c.req.json();
-    const scriptPath = body.scriptPath || path.join(process.cwd(), '..', '..', 'start_webbot_viz.sh');
-
-    // Kill existing slam first
-    try {
-      exec('pkill -f slam_toolbox');
-      exec('pkill -f start_webbot_viz');
-    } catch {}
-
-    // Check if tmux session exists and kill it
-    try {
-      exec('tmux kill-session -t webbot_viz 2>/dev/null || true');
-    } catch {}
-
-    // Create new tmux session and run script
-    const cmd = `tmux new -s webbot_viz -d "bash ${scriptPath}"`;
-    exec(cmd);
-
-    // Wait a moment for script to start
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Save PID info
-    const { stdout } = await execAsync('pgrep -f start_webbot_viz | head -1 || true');
-    if (stdout.trim()) {
-      fs.writeFileSync(SLAM_PROCESS_FILE, stdout.trim());
-    }
-
-    return c.json({ status: 'started', session: 'webbot_viz', script: scriptPath });
-  } catch (error) {
-    return c.json({ error: 'Failed to start tmux', details: String(error) }, 500);
-  }
-});
-
-// Stop tmux session
-app.post('/api/slam/stop-tmux', async (c) => {
-  try {
-    // Kill TMUX session first
-    try {
-      exec('tmux kill-session -t webbot_viz 2>/dev/null || true');
-    } catch {}
-
-    // Kill all related processes - be more aggressive
-    try {
-      exec('pkill -f start_webbot_viz');
-    } catch {}
-    try {
-      exec('pkill -f slam_toolbox');
-    } catch {}
-    try {
-      exec('pkill -f turtlebot3_gazebo');
-    } catch {}
-    try {
-      exec('pkill -f "gz sim"');
-    } catch {}
-
-    if (fs.existsSync(SLAM_PROCESS_FILE)) {
-      fs.unlinkSync(SLAM_PROCESS_FILE);
-    }
-
-    return c.json({ status: 'stopped' });
-  } catch (error) {
-    return c.json({ error: 'Failed to stop tmux', details: String(error) }, 500);
-  }
-});
-
-// Navigation status
-app.get('/api/navigation/status', async (c) => {
-  try {
-    let navRunning = false;
-    try {
-      execSync('tmux has-session -t webbot_nav 2>/dev/null', { stdio: 'ignore' });
-      navRunning = true;
-    } catch {
-      navRunning = false;
-    }
-
-    // Check for nav2 processes
-    const { stdout } = await execAsync('pgrep -a nav2_bringup || true');
-    const running = stdout.trim().length > 0;
-
-    return c.json({ running: running || navRunning, tmux: navRunning });
-  } catch {
-    return c.json({ running: false, tmux: false });
-  }
-});
-
-// Start navigation with TMUX
-app.post('/api/navigation/start-tmux', async (c) => {
-  try {
-    const body = await c.req.json();
-    const mapName = body.mapName;
-
-    if (!mapName) {
-      return c.json({ error: 'mapName is required' }, 400);
-    }
-
-    const mapYamlPath = path.join(MAPS_DIR, `${mapName}.yaml`);
-    if (!fs.existsSync(mapYamlPath)) {
-      return c.json({ error: 'Map file not found' }, 404);
-    }
-
-    // Kill existing navigation first
-    try {
-      exec('tmux kill-session -t webbot_nav 2>/dev/null || true');
-    } catch {}
-
-    // Create navigation script that loads the map
-    const navScriptPath = path.join(process.cwd(), 'start_navigation.sh');
-
-    const navScript = `#!/bin/bash
-
-# Cleanup function to kill all child processes
-cleanup() {
-    echo "Stopping navigation..."
-    pkill -f nav2_bringup 2>/dev/null
-    pkill -f navigation_launch 2>/dev/null
-    pkill -f robot_state_publisher 2>/dev/null
-    pkill -f turtlebot3_gazebo 2>/dev/null
-    pkill -f "gz sim" 2>/dev/null
-    exit 0
-}
-
-trap cleanup SIGHUP SIGTERM EXIT
-
-source /opt/ros/jazzy/setup.bash
-export TURTLEBOT3_MODEL=burger
-
-MAP_YAML_PATH="${mapYamlPath}"
-echo "Starting navigation with map: ${mapYamlPath}"
-
-# Get robot description from turtlebot3 description (plain URDF, not xacro)
-TURTLEBOT3_URDF=$(ros2 pkg prefix turtlebot3_description)/share/turtlebot3_description/urdf/turtlebot3_burger.urdf
-export ROBOT_DESCRIPTION=$(cat $TURTLEBOT3_URDF)
-
-# Start Gazebo if not running
-if ! pgrep -f "gz sim" > /dev/null; then
-  echo "Starting Gazebo..."
-  ros2 launch turtlebot3_gazebo turtlebot3_world.launch.py &
-  sleep 10
-fi
-
-# Start robot state publisher with robot description
-ros2 run robot_state_publisher robot_state_publisher --ros-args -p robot_description:="$ROBOT_DESCRIPTION" &
-
-sleep 2
-
-# Start navigation2 with map
-echo "Starting Navigation2 with map $MAP_YAML_PATH..."
-ros2 launch nav2_bringup bringup_launch.py use_sim_time:=true map:=$MAP_YAML_PATH &
-
-echo "Navigation started. Kill TMUX session to stop."
-wait
-`;
-
-    fs.writeFileSync(navScriptPath, navScript);
-    fs.chmodSync(navScriptPath, '755');
-
-    // Start in TMUX
-    const cmd = `tmux new -s webbot_nav -d "bash ${navScriptPath}"`;
-    exec(cmd);
-
-    return c.json({ status: 'started', session: 'webbot_nav', map: mapName });
-  } catch (error) {
-    return c.json({ error: 'Failed to start navigation', details: String(error) }, 500);
-  }
-});
-
-// Stop navigation
-app.post('/api/navigation/stop-tmux', async (c) => {
-  try {
-    // Kill TMUX session first (will trigger cleanup trap)
-    try {
-      exec('tmux kill-session -t webbot_nav 2>/dev/null || true');
-    } catch {}
-
-    // Kill nav2 processes
-    try { exec('pkill -f nav2_bringup'); } catch {}
-    try { exec('pkill -f navigation_launch'); } catch {}
-    try { exec('pkill -f robot_state_publisher'); } catch {}
-    try { exec('pkill -f turtlebot3_gazebo'); } catch {}
-    try { exec('pkill -f "gz sim"'); } catch {}
-
-    return c.json({ status: 'stopped' });
-  } catch (error) {
-    return c.json({ error: 'Failed to stop navigation', details: String(error) }, 500);
   }
 });
 

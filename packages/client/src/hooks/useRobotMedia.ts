@@ -14,16 +14,11 @@ export interface MediaConfig {
 }
 
 interface MediaServiceStatus {
-  serviceUnit: boolean;
   janus: boolean;
-  demoServer: boolean;
-  videoPipeline: boolean;
-  audioCapture: boolean;
-  audioPlayback: boolean;
 }
 
 interface MediaStatusResponse {
-  service: MediaServiceStatus;
+  janus: boolean;
   talkbackForward: {
     active: boolean;
     streamId: number | null;
@@ -133,12 +128,7 @@ function pickStream(
 
 export function useRobotMedia(config: MediaConfig | null) {
   const [serviceStatus, setServiceStatus] = useState<MediaServiceStatus>({
-    serviceUnit: false,
     janus: false,
-    demoServer: false,
-    videoPipeline: false,
-    audioCapture: false,
-    audioPlayback: false,
   });
   const [talkbackForwardActive, setTalkbackForwardActive] = useState(false);
   const [videoConnected, setVideoConnected] = useState(false);
@@ -216,15 +206,19 @@ export function useRobotMedia(config: MediaConfig | null) {
 
   const refreshStatus = useCallback(async () => {
     if (!config) {
-      return;
+      return null;
     }
 
     try {
       const response = await requestJson<MediaStatusResponse>('/api/media/status');
-      setServiceStatus(response.service);
+      setServiceStatus({ janus: response.janus });
       setTalkbackForwardActive(response.talkbackForward.active);
+      return response;
     } catch (err) {
+      setServiceStatus({ janus: false });
+      setTalkbackForwardActive(false);
       setError(err instanceof Error ? err.message : String(err));
+      return null;
     }
   }, [config, requestJson]);
 
@@ -276,15 +270,6 @@ export function useRobotMedia(config: MediaConfig | null) {
       });
     });
   }, []);
-
-  const ensureRobotService = useCallback(async (required: Array<keyof MediaServiceStatus>) => {
-    const missing = required.some((key) => !serviceStatus[key]);
-
-    if (missing) {
-      await requestJson('/api/media/start', { method: 'POST' });
-      await refreshStatus();
-    }
-  }, [refreshStatus, requestJson, serviceStatus]);
 
   const stopVideo = useCallback(() => {
     if (videoHandleRef.current) {
@@ -360,32 +345,23 @@ export function useRobotMedia(config: MediaConfig | null) {
   }, [config, destroySessionIfIdle, refreshStatus, requestJson, stopTracks]);
 
   const stopAll = useCallback(async () => {
+    setLoadingAction('stop-all');
     stopVideo();
     stopAudioMonitor();
     await stopTalkback();
-    setLoadingAction('stop-all');
-
-    try {
-      await requestJson('/api/media/stop', { method: 'POST' });
-      await refreshStatus();
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [refreshStatus, requestJson, stopAudioMonitor, stopTalkback, stopVideo]);
+    await refreshStatus();
+    setError(null);
+    setLoadingAction(null);
+  }, [refreshStatus, stopAudioMonitor, stopTalkback, stopVideo]);
 
   const connectStreaming = useCallback(async (kind: 'video' | 'audio') => {
     if (!config) {
       throw new Error('Media configuration is missing');
     }
-
-    const required = kind === 'video'
-      ? ['janus', 'videoPipeline'] as Array<keyof MediaServiceStatus>
-      : ['janus', 'audioCapture'] as Array<keyof MediaServiceStatus>;
-
-    await ensureRobotService(required);
+    const status = await refreshStatus();
+    if (status && !status.janus) {
+      throw new Error('Janus is unavailable. Please make sure Janus and the Jetson media pipelines are already running.');
+    }
 
     if (kind === 'video') {
       stopVideo();
@@ -504,8 +480,8 @@ export function useRobotMedia(config: MediaConfig | null) {
     bindMediaElement,
     clearMediaElement,
     config,
-    ensureRobotService,
     pluginMessage,
+    refreshStatus,
     stopAudioMonitor,
     stopVideo,
   ]);
@@ -546,7 +522,10 @@ export function useRobotMedia(config: MediaConfig | null) {
 
     try {
       await stopTalkback();
-      await ensureRobotService(['janus', 'audioPlayback']);
+      const status = await refreshStatus();
+      if (status && !status.janus) {
+        throw new Error('Janus is unavailable. Please make sure Janus and the Jetson media pipelines are already running.');
+      }
       await requestJson('/api/media/talkback/forward/start', { method: 'POST' });
       setTalkbackForwardActive(true);
       await refreshStatus();
@@ -618,25 +597,11 @@ export function useRobotMedia(config: MediaConfig | null) {
   }, [
     attachPlugin,
     config,
-    ensureRobotService,
     pluginMessage,
     refreshStatus,
     requestJson,
     stopTalkback,
   ]);
-
-  const startServices = useCallback(async () => {
-    setLoadingAction('start-services');
-    setError(null);
-    try {
-      await requestJson('/api/media/start', { method: 'POST' });
-      await refreshStatus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoadingAction(null);
-    }
-  }, [refreshStatus, requestJson]);
 
   useEffect(() => {
     if (!config) {
@@ -671,7 +636,6 @@ export function useRobotMedia(config: MediaConfig | null) {
     talkbackActive,
     loadingAction,
     error,
-    startServices,
     refreshStatus,
     startVideo,
     stopVideo,

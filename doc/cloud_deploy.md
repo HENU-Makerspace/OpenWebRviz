@@ -30,6 +30,7 @@
 - [system_manager_node.py](/home/c6h4o2/dev/web/ROS/packages/server/src/system_manager_node.py)
 - [system_manager.launch.py](/home/c6h4o2/dev/web/ROS/packages/server/launch/system_manager.launch.py)
   - 默认上传服务器地址改为 `http://182.43.86.126:4001`
+  - Jetson 保存地图后会主动上传到云服务器
 
 ## 云服务器需要放置的文件
 
@@ -109,19 +110,15 @@ sudo systemctl reload nginx
 - [system_manager_node.py](/home/c6h4o2/dev/web/ROS/packages/server/src/system_manager_node.py)
 - [system_manager.launch.py](/home/c6h4o2/dev/web/ROS/packages/server/launch/system_manager.launch.py)
 
-### 3. 云服务器能免密 SSH 到 Jetson
+### 3. 不再要求云服务器 SSH 到 Jetson
 
-当前后端仍会通过 SSH/SCP 访问 Jetson：
+当前代码已经去掉了服务器侧通过 SSH/SCP 管理 Jetson 的残留逻辑：
 
-- 启停远端进程
-- 同步地图文件
+- 不再由服务器远程启动 Jetson 采集进程
+- 不再由服务器从 Jetson `scp` 地图
+- 地图保存后由 Jetson 主动 HTTP 上传到云服务器
 
-所以需要保证云服务器执行下面两条命令都通：
-
-```bash
-ssh nvidia@100.108.168.47
-scp nvidia@100.108.168.47:/home/nvidia/maps/test.yaml /tmp/
-```
+也就是说，媒体采集和推流需要在 Jetson 侧自行常驻运行。
 
 ## 联调检查顺序
 

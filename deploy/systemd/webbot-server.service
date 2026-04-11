@@ -8,7 +8,8 @@ Type=simple
 User=root
 WorkingDirectory=/opt/webbot/packages/server
 Environment=NODE_ENV=production
-ExecStart=/usr/local/bin/bun run start
+Environment=PATH=/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/env bun run start
 Restart=always
 RestartSec=3
 

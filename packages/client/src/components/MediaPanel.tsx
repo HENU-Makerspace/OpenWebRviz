@@ -1,4 +1,4 @@
-import { Loader2, Mic, Play, Radio, RefreshCw, Square, Volume2, Waves } from 'lucide-react';
+import { Loader2, Mic, Play, RefreshCw, Square, Volume2, Waves } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -18,8 +18,7 @@ function StatusBadge({ label, active }: { label: string; active: boolean }) {
 
 export function MediaPanel({ media }: MediaPanelProps) {
   const busy = media.loadingAction !== null;
-  const serviceRunning = Object.values(media.serviceStatus).some(Boolean);
-  const canStop = serviceRunning || media.videoConnected || media.audioConnected || media.talkbackActive;
+  const canStop = media.videoConnected || media.audioConnected || media.talkbackActive || media.talkbackForwardActive;
 
   return (
     <Card className="border-slate-300">
@@ -29,34 +28,16 @@ export function MediaPanel({ media }: MediaPanelProps) {
           Media Console
         </CardTitle>
         <CardDescription>
-          通过当前界面的按钮控制 Jetson 上的 Janus、音频和摄像头 WebRTC 链路。
+          连接云端 Janus 媒体链路。Jetson 采集进程需要在设备侧自行运行。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          <StatusBadge label="Systemd" active={media.serviceStatus.serviceUnit} />
           <StatusBadge label="Janus" active={media.serviceStatus.janus} />
-          <StatusBadge label="Demo HTTP" active={media.serviceStatus.demoServer} />
-          <StatusBadge label="Video Push" active={media.serviceStatus.videoPipeline} />
-          <StatusBadge label="Audio In" active={media.serviceStatus.audioCapture} />
-          <StatusBadge label="Audio Out" active={media.serviceStatus.audioPlayback} />
           <StatusBadge label="RTP Forward" active={media.talkbackForwardActive} />
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            onClick={media.startServices}
-            disabled={busy || serviceRunning}
-            variant="default"
-            size="sm"
-          >
-            {media.loadingAction === 'start-services' ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Radio className="h-4 w-4" />
-            )}
-            {serviceRunning ? '服务已启动' : '启动服务'}
-          </Button>
+        <div className="grid grid-cols-1 gap-2">
           <Button
             onClick={() => void media.stopAll()}
             disabled={busy || !canStop}
@@ -68,7 +49,7 @@ export function MediaPanel({ media }: MediaPanelProps) {
             ) : (
               <Square className="h-4 w-4" />
             )}
-            全部停止
+            断开媒体
           </Button>
         </div>
 

@@ -82,7 +82,7 @@ function RosbridgePanel({ wsUrl }: { wsUrl: string }) {
 function MappingPanel({ wsUrl }: { wsUrl: string }) {
   const { ros, isConnected } = useRosConnection(wsUrl);
   const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
-  const { maps, fetchMaps, loading: mapsLoading, saveMap: saveMapToServer } = useMapManager();
+  const { maps, fetchMaps, loading: mapsLoading } = useMapManager();
   const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
   const [saving, setSaving] = useState(false);
 
@@ -400,7 +400,7 @@ function AppContent() {
 
   // System manager for robot control
   const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
-  const { maps, fetchMaps, saveMap: saveMapToServer } = useMapManager();
+  const { maps, fetchMaps } = useMapManager();
 
   useKeyboardTeleop(ros, {
     linearSpeed: 0.5,
