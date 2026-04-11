@@ -12,7 +12,7 @@
 - 前端 API 走云服务器 `/api`
 - 前端 ROS WebSocket 走云服务器 `ws://182.43.86.126/rosbridge/`
 - 云服务器通过 Tailscale 转发到 Jetson `100.108.168.47:9090`
-- Janus 仍部署在云服务器 `182.43.86.126`
+- Janus 仍部署在 Jetson `100.108.168.47`
 
 ## 本地已改内容
 
@@ -20,9 +20,10 @@
   - `server.host` 改为 `182.43.86.126`
   - `jetson.host` 改为 `100.108.168.47`
   - `frontend.ws_url` 改为 `ws://182.43.86.126/rosbridge/`
-  - `media.janus_host` 改为 `182.43.86.126`
+  - `media.janus_host` 改为 `100.108.168.47`
 - [index.ts](/home/c6h4o2/dev/web/ROS/packages/server/src/index.ts)
   - `/api/config` 会下发 `rosbridgeUrl`
+  - Janus API 和 Demo 地址会下发为云服务器代理地址
 - [App.tsx](/home/c6h4o2/dev/web/ROS/packages/client/src/App.tsx)
   - 前端改为使用后端下发的 `rosbridgeUrl`
 - [vite.config.ts](/home/c6h4o2/dev/web/ROS/packages/client/vite.config.ts)
@@ -38,6 +39,13 @@
   - [webbot.conf](/home/c6h4o2/dev/web/ROS/deploy/nginx/webbot.conf)
 - 后端 systemd 模板：
   - [webbot-server.service](/home/c6h4o2/dev/web/ROS/deploy/systemd/webbot-server.service)
+
+## Jetson 需要放置的文件
+
+- 媒体启动脚本模板：
+  - [webbot-media.sh](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-media.sh)
+- 媒体 systemd 模板：
+  - [webbot-media.service](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-media.service)
 
 ## 云服务器部署步骤
 
@@ -102,6 +110,7 @@ sudo systemctl reload nginx
 - 直接托管 `/usr/share/nginx/html/webbot` 下的前端静态文件
 - 把 `/api/` 转发到本机 `127.0.0.1:4001`
 - 把 `/rosbridge/` 转发到 Jetson `100.108.168.47:9090`
+- 把 `/janus-demo/` 转发到 Jetson `100.108.168.47:8000`
 
 ## Jetson 需要确认的项目
 
@@ -109,14 +118,40 @@ sudo systemctl reload nginx
 
 确保 Jetson 上 `rosbridge_websocket` 监听 `0.0.0.0:9090`。
 
-### 2. system_manager_node 使用新地址
+### 2. Janus 在 Jetson 上运行
+
+可以直接把仓库里的 systemd 模板放到 Jetson：
+
+```bash
+install -Dm755 packages/server/systemd/webbot-media.sh ~/bin/webbot-media.sh
+install -Dm644 packages/server/systemd/webbot-media.service ~/.config/systemd/user/webbot-media.service
+systemctl --user daemon-reload
+systemctl --user enable --now webbot-media.service
+```
+
+确保 Jetson 上至少有这两个入口：
+
+- `http://100.108.168.47:8088/janus`
+- `http://100.108.168.47:8000`
+
+当前脚本行为：
+
+- `Janus` 和 demo HTTP 视为核心进程，任何一个退出都会触发 systemd 重启
+- 音频采集、音频回放、视频推流只在设备存在时启动
+- 如果采集设备不存在，只会记日志，不会把 Janus 一起拉死
+
+也就是说，如果当前 Jetson 上没有 `UACDemoV10` 或 `/dev/video0`，页面上的 WebRTC 音视频仍然不会正常出流，但至少 Janus API 与 `janus.js` 不会因为采集脚本失败而整体掉线。
+
+要真正出音视频，还是需要把脚本里的设备名改成 Jetson 当前实际存在的设备。
+
+### 3. system_manager_node 使用新地址
 
 重新构建并安装 ROS 包，确保这两个文件的新默认值生效：
 
 - [system_manager_node.py](/home/c6h4o2/dev/web/ROS/packages/server/src/system_manager_node.py)
 - [system_manager.launch.py](/home/c6h4o2/dev/web/ROS/packages/server/launch/system_manager.launch.py)
 
-### 3. 不再要求云服务器 SSH 到 Jetson
+### 4. 不再要求云服务器 SSH 到 Jetson
 
 当前代码已经去掉了服务器侧通过 SSH/SCP 管理 Jetson 的残留逻辑：
 
@@ -130,20 +165,21 @@ sudo systemctl reload nginx
 
 1. 云服务器执行 `curl http://127.0.0.1:4001/api/health`
 2. 云服务器执行 `curl http://100.108.168.47:9090`
-3. 浏览器打开 `http://182.43.86.126`
-4. 浏览器确认 `/api/config` 返回 `rosbridgeUrl`
-5. 页面确认 ROS 连接成功
-6. 再测试地图同步、SLAM、导航和音视频
+3. 云服务器执行 `curl http://100.108.168.47:8088/janus`
+4. 云服务器执行 `curl http://100.108.168.47:8000`
+5. 浏览器打开 `http://182.43.86.126`
+6. 浏览器确认 `/api/config` 返回 `rosbridgeUrl` 和 Janus 代理地址
+7. 页面确认 ROS 连接成功
+8. 再测试地图同步、SLAM、导航和音视频
 
 ## 还没做的事
 
 - 还没有配置 HTTPS/WSS
-- 还没有把 Janus 也统一反代到 Nginx
-- 目前 Janus 仍按现有端口直接对外提供服务
+- Janus 媒体面如果要给公网浏览器用，还需要确认 Jetson 的 ICE/TURN 配置
 
 如果下一步要上正式公网，建议继续做：
 
 1. 域名
 2. HTTPS
 3. `wss://` rosbridge
-4. Janus 的公网端口与 ICE 配置检查
+4. Janus 的 ICE/TURN 配置检查

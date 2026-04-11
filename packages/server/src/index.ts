@@ -285,12 +285,12 @@ app.get('/api/config', (c) => {
     jetsonRosbridgePort: JETSON_ROSBRIDGE_PORT,
     rosbridgeUrl: FRONTEND_WS_URL || `ws://${JETSON_HOST}:${JETSON_ROSBRIDGE_PORT}`,
     media: {
-      janusBaseUrl: `http://${JANUS_HOST}:${JANUS_HTTP_PORT}`,
-      janusApiUrl: `http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}`,
-      janusDemoBaseUrl: `http://${JANUS_HOST}:${JANUS_DEMO_PORT}`,
+      janusBaseUrl: `http://${SERVER_HOST}/api/media/janus`,
+      janusApiUrl: `http://${SERVER_HOST}/api/media/janus`,
+      janusDemoBaseUrl: `http://${SERVER_HOST}/janus-demo`,
       janusScriptUrl: `/api/media/assets/${JANUS_SCRIPT_ASSET}`,
-      streamingUrl: `http://${JANUS_HOST}:${JANUS_DEMO_PORT}${JANUS_STREAMING_PATH}`,
-      audioBridgeUrl: `http://${JANUS_HOST}:${JANUS_DEMO_PORT}${JANUS_AUDIOBRIDGE_PATH}`,
+      streamingUrl: `http://${SERVER_HOST}/janus-demo${JANUS_STREAMING_PATH}`,
+      audioBridgeUrl: `http://${SERVER_HOST}/janus-demo${JANUS_AUDIOBRIDGE_PATH}`,
       preferredVideoStreamId: Number(MEDIA_VIDEO_STREAM_ID) || 0,
       preferredAudioStreamId: Number(MEDIA_AUDIO_STREAM_ID) || 0,
       audioBridgeRoom: Number(MEDIA_AUDIO_BRIDGE_ROOM),
@@ -302,6 +302,7 @@ app.get('/api/config', (c) => {
 app.get('/api/media/assets/*', async (c) => {
   const assetPath = c.req.path.replace('/api/media/assets/', '');
   const safeAssetPath = path.basename(assetPath);
+  const remoteAssetBasePath = safeAssetPath === JANUS_SCRIPT_ASSET ? '/demos' : '';
 
   if (safeAssetPath === JANUS_SCRIPT_ASSET) {
     const localScriptPath = path.join(LOCAL_JANUS_DEMOS_DIR, JANUS_SCRIPT_ASSET);
@@ -316,7 +317,7 @@ app.get('/api/media/assets/*', async (c) => {
     return c.text('adapter asset is now loaded from the frontend bundle', 404);
   }
 
-  return proxyRemoteGet(`http://${JANUS_HOST}:${JANUS_DEMO_PORT}/${safeAssetPath}`);
+  return proxyRemoteGet(`http://${JANUS_HOST}:${JANUS_DEMO_PORT}${remoteAssetBasePath}/${safeAssetPath}`);
 });
 
 app.all('/api/media/janus', proxyJanus);

@@ -28,7 +28,7 @@ media:
   service_name: "webbot-media.service"
   service_script_path: "/home/nvidia/bin/webbot-media.sh"
   service_unit_path: "/home/nvidia/.config/systemd/user/webbot-media.service"
-  janus_host: "182.43.86.126"
+  janus_host: "100.108.168.47"
   janus_http_port: 8088
   janus_api_path: "/janus"
   janus_demo_port: 8000
