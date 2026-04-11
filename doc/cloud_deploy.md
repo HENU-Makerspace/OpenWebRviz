@@ -64,6 +64,12 @@ bun run build
 packages/client/dist
 ```
 
+建议部署到：
+
+```bash
+/usr/share/nginx/html/webbot
+```
+
 ### 3. 启动后端
 
 后端建议用 systemd：
@@ -93,7 +99,7 @@ sudo systemctl reload nginx
 
 这份配置会做三件事：
 
-- 直接托管前端静态文件
+- 直接托管 `/usr/share/nginx/html/webbot` 下的前端静态文件
 - 把 `/api/` 转发到本机 `127.0.0.1:4001`
 - 把 `/rosbridge/` 转发到 Jetson `100.108.168.47:9090`
 
