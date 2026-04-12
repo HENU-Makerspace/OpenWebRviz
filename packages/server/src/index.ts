@@ -61,7 +61,7 @@ const SERVER_HOST = config?.server?.host || process.env.SERVER_HOST || '192.168.
 const SERVER_PORT = config?.server?.port || process.env.SERVER_PORT || 4001;
 
 // Jetson configuration
-const JETSON_HOST = config?.jetson?.host || process.env.JETSON_HOST || '192.168.1.58';
+const JETSON_HOST = config?.jetson?.host || process.env.JETSON_HOST || '192.168.43.100';
 const JETSON_ROSBRIDGE_PORT = config?.jetson?.rosbridge_port || 9090;
 const JANUS_HOST = config?.media?.janus_host || JETSON_HOST;
 const JANUS_HTTP_PORT = config?.media?.janus_http_port || 8088;
@@ -81,7 +81,14 @@ const MEDIA_AUDIO_BRIDGE_SECRET = config?.media?.audiobridge_secret || 'adminpwd
 const MEDIA_AUDIO_BRIDGE_FORWARD_HOST = config?.media?.audiobridge_forward_host || '127.0.0.1';
 const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port || MEDIA_AUDIO_PLAYBACK_PORT;
 const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
+const MEDIA_CONTROL_PROXY_HOST = config?.media?.control_proxy_host || '127.0.0.1';
+const MEDIA_CONTROL_PROXY_PORT = config?.media?.control_proxy_port || 19110;
 const FRONTEND_WS_URL = config?.frontend?.ws_url || process.env.FRONTEND_WS_URL || '';
+const FACE_PROXY_HOST = config?.face?.proxy_host || '127.0.0.1';
+const FACE_PROXY_PORT = config?.face?.proxy_port || 19100;
+const FACE_API_PATH = config?.face?.api_path || '/faces/latest';
+const FACE_HEALTH_PATH = config?.face?.health_path || '/health';
+const FACE_POLL_INTERVAL_MS = config?.face?.poll_interval_ms || 500;
 
 console.log('[Config] Loaded config:', {
   SERVER_HOST,
@@ -91,6 +98,8 @@ console.log('[Config] Loaded config:', {
   JANUS_HTTP_PORT,
   JANUS_API_PATH,
   JANUS_DEMO_PORT,
+  MEDIA_CONTROL_PROXY_PORT,
+  FACE_PROXY_PORT,
 });
 
 function randomTransaction() {
@@ -234,6 +243,37 @@ async function proxyRemoteGet(targetUrl: string) {
   });
 }
 
+async function proxyRemoteJson(targetUrl: string) {
+  const response = await fetch(targetUrl);
+  const payload = await response.text();
+  const headers = new Headers();
+  headers.set('Content-Type', response.headers.get('content-type') || 'application/json; charset=utf-8');
+
+  return new Response(payload, {
+    status: response.status,
+    headers,
+  });
+}
+
+async function requestRemoteJson<T = any>(targetUrl: string, init?: RequestInit) {
+  const response = await fetch(targetUrl, init);
+  const payload = await response.text();
+  const contentType = response.headers.get('content-type') || 'application/json; charset=utf-8';
+  const data = payload ? JSON.parse(payload) as T : {} as T;
+
+  if (!response.ok) {
+    const detail = typeof data === 'object' && data && 'details' in data
+      ? String((data as Record<string, unknown>).details)
+      : payload || `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+
+  return {
+    data,
+    contentType,
+  };
+}
+
 async function proxyJanus(c: any) {
   const requestUrl = new URL(c.req.url);
   const suffix = c.req.path.replace('/api/media/janus', '');
@@ -296,6 +336,12 @@ app.get('/api/config', (c) => {
       audioBridgeRoom: Number(MEDIA_AUDIO_BRIDGE_ROOM),
       audioBridgeDisplay: MEDIA_AUDIO_BRIDGE_DISPLAY,
     },
+    face: {
+      enabled: true,
+      latestUrl: '/api/face/latest',
+      healthUrl: '/api/face/health',
+      pollIntervalMs: Number(FACE_POLL_INTERVAL_MS) || 500,
+    },
   });
 });
 
@@ -323,10 +369,46 @@ app.get('/api/media/assets/*', async (c) => {
 app.all('/api/media/janus', proxyJanus);
 app.all('/api/media/janus/*', proxyJanus);
 
+app.get('/api/face/health', async (c) => {
+  try {
+    return await proxyRemoteJson(`http://${FACE_PROXY_HOST}:${FACE_PROXY_PORT}${FACE_HEALTH_PATH}`);
+  } catch (error) {
+    return c.json({
+      online: false,
+      error: String(error),
+    });
+  }
+});
+
+app.get('/api/face/latest', async (c) => {
+  try {
+    return await proxyRemoteJson(`http://${FACE_PROXY_HOST}:${FACE_PROXY_PORT}${FACE_API_PATH}`);
+  } catch (error) {
+    return c.json({
+      online: false,
+      updatedAt: null,
+      frameWidth: 0,
+      frameHeight: 0,
+      faces: [],
+      error: String(error),
+    });
+  }
+});
+
 app.get('/api/media/status', async (c) => {
   try {
     const janus = await isJanusAvailable();
     const forwarders = janus ? await getTalkbackForwarders() : [];
+    let video: Record<string, unknown> | null = null;
+
+    try {
+      const response = await requestRemoteJson<{ video?: Record<string, unknown> }>(
+        `http://${MEDIA_CONTROL_PROXY_HOST}:${MEDIA_CONTROL_PROXY_PORT}/status`,
+      );
+      video = response.data?.video || null;
+    } catch {
+      video = null;
+    }
 
     return c.json({
       janus,
@@ -334,9 +416,51 @@ app.get('/api/media/status', async (c) => {
         active: forwarders.length > 0,
         streamId: forwarders[0]?.stream_id ?? null,
       },
+      video,
     });
   } catch (error) {
     return c.json({ error: 'Failed to get media status', details: String(error) }, 500);
+  }
+});
+
+app.get('/api/media/video/status', async (c) => {
+  try {
+    const response = await requestRemoteJson(
+      `http://${MEDIA_CONTROL_PROXY_HOST}:${MEDIA_CONTROL_PROXY_PORT}/status`,
+    );
+    return c.body(JSON.stringify(response.data), 200, {
+      'Content-Type': response.contentType,
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to get video status', details: String(error) }, 500);
+  }
+});
+
+app.post('/api/media/video/start', async (c) => {
+  try {
+    const response = await requestRemoteJson(
+      `http://${MEDIA_CONTROL_PROXY_HOST}:${MEDIA_CONTROL_PROXY_PORT}/video/start`,
+      { method: 'POST' },
+    );
+    return c.body(JSON.stringify(response.data), 200, {
+      'Content-Type': response.contentType,
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to start video pipeline', details: String(error) }, 500);
+  }
+});
+
+app.post('/api/media/video/stop', async (c) => {
+  try {
+    const response = await requestRemoteJson(
+      `http://${MEDIA_CONTROL_PROXY_HOST}:${MEDIA_CONTROL_PROXY_PORT}/video/stop`,
+      { method: 'POST' },
+    );
+    return c.body(JSON.stringify(response.data), 200, {
+      'Content-Type': response.contentType,
+    });
+  } catch (error) {
+    return c.json({ error: 'Failed to stop video pipeline', details: String(error) }, 500);
   }
 });
 
@@ -395,13 +519,6 @@ app.post('/api/media/talkback/forward/stop', async (c) => {
   } catch (error) {
     return c.json({ error: 'Failed to stop talkback forwarder', details: String(error) }, 500);
   }
-});
-
-app.get('/api/ros-topics', (c) => {
-  return c.json({
-    topics: [],
-    message: 'ROS connection is handled client-side via rosbridge_websocket'
-  });
 });
 
 // Get list of saved maps
@@ -512,40 +629,6 @@ app.get('/api/maps/:name/data', async (c) => {
   }
 });
 
-// Get slam config
-app.get('/api/slam-config', async (c) => {
-  try {
-    // Try local config first (packages/server/config/)
-    const localConfig = path.join(process.cwd(), 'config', 'slam_default.yaml');
-    if (fs.existsSync(localConfig)) {
-      const content = fs.readFileSync(localConfig, 'utf-8');
-      return c.json({ configPath: localConfig, content });
-    }
-
-    // Try to find slam config in common system locations
-    const configPaths = [
-      '/opt/ros/humble/share/slam_toolbox/params/mapper_params_online_async.yaml',
-      '/opt/ros/humble/share/slam_toolbox/params/mapper_params_offline.yaml',
-      '/usr/share/slam_toolbox/params/mapper_params_online_async.yaml',
-    ];
-
-    for (const configPath of configPaths) {
-      if (fs.existsSync(configPath)) {
-        const content = fs.readFileSync(configPath, 'utf-8');
-        return c.json({ configPath, content: content.substring(0, 1000) });
-      }
-    }
-
-    // Return default config
-    return c.json({
-      configPath: 'default',
-      content: 'lidar_frame: laser\nodom_frame: odom\nmap_frame: map\nmode: mapping\n',
-    });
-  } catch (error) {
-    return c.json({ error: 'Failed to get config', details: String(error) }, 500);
-  }
-});
-
 // Upload map from Jetson via HTTP (JSON with base64)
 app.post('/api/maps/upload', async (c) => {
   try {
@@ -628,31 +711,6 @@ app.get('/api/slam/status', async (c) => {
   }
 });
 
-// Set initial pose for AMCL localization
-app.post('/api/navigation/set-initial-pose', async (c) => {
-  try {
-    const body = await c.req.json();
-    const { x, y, theta } = body;
-
-    if (x === undefined || y === undefined || theta === undefined) {
-      return c.json({ error: 'x, y, and theta are required' }, 400);
-    }
-
-    // Publish initial pose using ros2 topic pub
-    const cmd = [
-      'ros2', 'topic', 'pub', '-1', '/initialpose',
-      'geometry_msgs/PoseWithCovarianceStamped',
-      `{header: {stamp: {sec: 0, nanosec: 0}, frame_id: 'map'}, pose: {pose: {position: {x: ${x}, y: ${y}, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: ${Math.sin(theta/2)}, w: ${Math.cos(theta/2)}}}, covariance: [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0685389192]}`
-    ].join(' ');
-
-    exec(cmd);
-
-    return c.json({ status: 'success', x, y, theta });
-  } catch (error) {
-    return c.json({ error: 'Failed to set initial pose', details: String(error) }, 500);
-  }
-});
-
 // Get server network info
 app.get('/api/network', async (c) => {
   try {
@@ -667,16 +725,6 @@ app.get('/api/network', async (c) => {
   } catch {
     return c.json({ ips: ['localhost'], hostname: 'localhost', port: PORT });
   }
-});
-
-// Broadcast presence (for discovery)
-app.post('/api/broadcast', async (c) => {
-  const body = await c.req.json();
-  const port = body.port || PORT;
-
-  // This endpoint can be called by other services to register themselves
-  // For now, just acknowledge
-  return c.json({ status: 'acknowledged', port });
 });
 
 const PORT = process.env.PORT || 4001;

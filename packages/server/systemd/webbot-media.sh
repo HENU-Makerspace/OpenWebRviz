@@ -17,9 +17,12 @@ VIDEO_WIDTH="1280"
 VIDEO_HEIGHT="720"
 VIDEO_FRAMERATE="30/1"
 VIDEO_BITRATE="4000"
+VIDEO_FACE_FRAME_RATE="2/1"
 
 STATE_DIR="${HOME}/.local/state/webbot-media"
+FRAME_DIR="${STATE_DIR}/frames"
 mkdir -p "${STATE_DIR}"
+mkdir -p "${FRAME_DIR}"
 
 PIDS=()
 declare -A PID_NAMES=()
@@ -35,13 +38,11 @@ cleanup_legacy_processes() {
     "python3 -m http.server ${JANUS_DEMO_PORT} --directory ${JANUS_HTML_DIR}"
     "gst-launch-1.0 -v alsasrc device=${AUDIO_CAPTURE_DEVICE}"
     "gst-launch-1.0 -v udpsrc port=${AUDIO_PLAYBACK_PORT}"
-    "gst-launch-1.0 v4l2src device=${VIDEO_DEVICE}"
   )
 
   for pattern in "${patterns[@]}"; do
     pkill -f -- "${pattern}" 2>/dev/null || true
   done
-
   sleep 1
 }
 
@@ -168,12 +169,6 @@ if command -v gst-launch-1.0 >/dev/null 2>&1; then
     log "Skipping audio-playback: ALSA playback device ${AUDIO_PLAYBACK_DEVICE} is unavailable"
   fi
 
-  if [[ -e "${VIDEO_DEVICE}" ]]; then
-    start_process video-pipeline optional bash -lc \
-      "exec gst-launch-1.0 v4l2src device=${VIDEO_DEVICE} do-timestamp=true ! image/jpeg,width=${VIDEO_WIDTH},height=${VIDEO_HEIGHT},framerate=${VIDEO_FRAMERATE} ! jpegdec ! nvvideoconvert ! 'video/x-raw,format=I420' ! x264enc bitrate=${VIDEO_BITRATE} tune=zerolatency speed-preset=ultrafast ! rtph264pay config-interval=1 pt=96 ! udpsink host=127.0.0.1 port=${VIDEO_PORT}"
-  else
-    log "Skipping video-pipeline: video device ${VIDEO_DEVICE} does not exist"
-  fi
 else
   log "Skipping optional media pipelines: gst-launch-1.0 is not installed"
 fi

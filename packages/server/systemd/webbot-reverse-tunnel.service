@@ -1,0 +1,14 @@
+[Unit]
+Description=WebBot Reverse SSH Tunnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=SSH_KEY=%h/.ssh/id_ed25519_webbot_cloud
+ExecStart=/usr/bin/ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=accept-new -i ${SSH_KEY} -R 127.0.0.1:19090:127.0.0.1:9090 -R 127.0.0.1:18088:127.0.0.1:8088 -R 127.0.0.1:18000:127.0.0.1:8000 -R 127.0.0.1:19100:127.0.0.1:19100 -R 127.0.0.1:19110:127.0.0.1:19110 root@182.43.86.126
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

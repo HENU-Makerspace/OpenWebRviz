@@ -11,7 +11,9 @@ import { useRobotMedia } from './hooks/useRobotMedia';
 import { useKeyboardTeleop } from './hooks/useKeyboardTeleop';
 import { ModeProvider, useMode } from './hooks/useMode';
 import { useSlamControl, useMapManager, useNetworkInfo } from './hooks/useSlamControl';
+import { useFaceRecognition } from './hooks/useFaceRecognition';
 import { useSystemManager } from './hooks/useSystemManager';
+import type { ConnectionState } from './hooks/useRosConnection';
 
 interface ServerConfig {
   serverUrl: string;
@@ -30,6 +32,12 @@ interface ServerConfig {
     audioBridgeRoom: number;
     audioBridgeDisplay: string;
   };
+  face: {
+    enabled: boolean;
+    latestUrl: string;
+    healthUrl: string;
+    pollIntervalMs: number;
+  };
 }
 
 function useServerConfig() {
@@ -45,11 +53,15 @@ function useServerConfig() {
   return config;
 }
 
-function RosbridgePanel({ wsUrl }: { wsUrl: string }) {
-  // Use WebSocket connection status to determine if rosbridge is running
-  // (rosbridge runs on Jetson, so we check if we can connect via WebSocket)
-  const { isConnected, reconnect, disconnect } = useRosConnection(wsUrl);
-
+function RosbridgePanel({
+  isConnected,
+  reconnect,
+  disconnect,
+}: {
+  isConnected: boolean;
+  reconnect: () => void;
+  disconnect: () => void;
+}) {
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-medium text-gray-500">Rosbridge</h3>
@@ -79,8 +91,7 @@ function RosbridgePanel({ wsUrl }: { wsUrl: string }) {
   );
 }
 
-function MappingPanel({ wsUrl }: { wsUrl: string }) {
-  const { ros, isConnected } = useRosConnection(wsUrl);
+function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) {
   const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
   const { maps, fetchMaps, loading: mapsLoading } = useMapManager();
   const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
@@ -188,14 +199,19 @@ interface NavigationPanelProps {
 type Stance = 'stand' | 'crouch';
 type Speed = 'high' | 'medium' | 'low';
 
-function NavigationPanel({ navClickMode, setNavClickMode, selectedMap, setSelectedMap, wsUrl }: NavigationPanelProps & { wsUrl: string }) {
+function NavigationPanel({
+  navClickMode,
+  setNavClickMode,
+  selectedMap,
+  setSelectedMap,
+  ros,
+  isConnected,
+}: NavigationPanelProps & { ros: any; isConnected: boolean }) {
   const { maps, fetchMaps, loading } = useMapManager();
   const [starting, setStarting] = useState(false);
   const [stance, setStance] = useState<Stance>('crouch');
   const [speed, setSpeed] = useState<Speed>('high');
 
-  // Use system manager for robot control
-  const { ros, isConnected } = useRosConnection(wsUrl);
   const { status: robotStatus, startNavigation: startNav, stopAll } = useSystemManager(ros, isConnected);
 
   const isNavRunning = robotStatus.mode === 'navigation';
@@ -391,8 +407,17 @@ function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
   const config = useServerConfig();
   const media = useRobotMedia(config?.media || null);
+  const face = useFaceRecognition(config?.face || null, media.videoConnected);
   const wsUrl = config?.rosbridgeUrl || '';
-  const { ros, isConnected } = useRosConnection(wsUrl);
+  const {
+    ros,
+    isConnected,
+    connectionState,
+    error: rosError,
+    reconnect,
+    disconnect,
+    reconnectCount,
+  } = useRosConnection(wsUrl);
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();
   const [navClickMode, setNavClickMode] = useState<'none' | 'initial_pose' | 'goal'>('none');
@@ -454,21 +479,31 @@ function AppContent() {
             {showDebug ? 'Hide Debug' : 'Show Debug'}
           </button>
         </div>
-        <ConnectionStatus wsUrl={wsUrl} />
+        <ConnectionStatus
+          connectionState={connectionState as ConnectionState}
+          error={rosError}
+          reconnect={reconnect}
+          reconnectCount={reconnectCount}
+        />
       </header>
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-64 bg-white border-r p-4 overflow-y-auto space-y-6">
-          <RosbridgePanel wsUrl={wsUrl} />
+          <RosbridgePanel
+            isConnected={isConnected}
+            reconnect={reconnect}
+            disconnect={disconnect}
+          />
           {mode === 'teleop' ? (
-            <MappingPanel wsUrl={wsUrl} />
+            <MappingPanel ros={ros} isConnected={isConnected} />
           ) : (
             <NavigationPanel
               navClickMode={navClickMode}
               setNavClickMode={setNavClickMode}
               selectedMap={selectedMap}
               setSelectedMap={setSelectedMap}
-              wsUrl={wsUrl}
+              ros={ros}
+              isConnected={isConnected}
             />
           )}
           {config?.media && <MediaPanel media={media} />}
@@ -490,6 +525,7 @@ function AppContent() {
             videoConnected={media.videoConnected}
             audioMonitoring={media.audioConnected}
             talkbackActive={media.talkbackActive}
+            faceSnapshot={face.snapshot}
             onCloseVideo={media.stopVideo}
           />
           <ImageOverlay ros={ros} hidden={media.videoConnected} />

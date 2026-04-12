@@ -1,19 +1,20 @@
 import { Wifi, WifiOff, AlertCircle, RefreshCw } from 'lucide-react';
-import { useRosConnection } from '../hooks/useRosConnection';
+import type { ConnectionState } from '../hooks/useRosConnection';
 
 interface ConnectionStatusProps {
-  wsUrl?: string;
+  connectionState: ConnectionState;
+  error: string | null;
+  reconnect: () => void;
+  reconnectCount: number;
 }
 
-export function ConnectionStatus({ wsUrl = 'ws://localhost:9090' }: ConnectionStatusProps) {
-  const {
-    isConnected,
-    isConnecting,
-    connectionState,
-    error,
-    reconnect,
-    reconnectCount,
-  } = useRosConnection(wsUrl);
+export function ConnectionStatus({
+  connectionState,
+  error,
+  reconnect,
+  reconnectCount,
+}: ConnectionStatusProps) {
+  const isConnecting = connectionState === 'connecting';
 
   const stateConfig = {
     connected: {

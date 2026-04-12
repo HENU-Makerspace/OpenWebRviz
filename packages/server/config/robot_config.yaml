@@ -5,9 +5,9 @@ server:
   port: 4001
 
 # Jetson 配置
-# 注意：这里要填写机器人实际可达的地址，不一定是云服务器 IP。
+# 注意：Jetson 不再通过 Tailscale 暴露服务，下面地址仅用于本地运维/SSH。
 jetson:
-  host: "100.108.168.47"
+  host: "192.168.43.100"
   user: "nvidia"
   maps_dir: "/home/nvidia/maps"
   rosbridge_port: 9090
@@ -20,18 +20,37 @@ rosbridge:
 # 前端配置
 frontend:
   api_url: "http://182.43.86.126:4001"
-  # 推荐在云服务器/Nginx 上反向代理到 rosbridge，再让前端走这个公网地址。
+  # 前端固定连接云服务器，云服务器本机再转到 Jetson 主动建立的反向隧道端口。
   ws_url: "ws://182.43.86.126/rosbridge/"
+
+# Jetson 主动反向 SSH 到云服务器后，云服务器本机开放的回环端口
+reverse_tunnel:
+  rosbridge_port: 19090
+  janus_http_port: 18088
+  janus_demo_port: 18000
+  face_port: 19100
+  media_control_port: 19110
+  server_host: "182.43.86.126"
+  server_user: "root"
 
 # WebRTC / Janus 媒体配置
 media:
   service_name: "webbot-media.service"
   service_script_path: "/home/nvidia/bin/webbot-media.sh"
   service_unit_path: "/home/nvidia/.config/systemd/user/webbot-media.service"
-  janus_host: "100.108.168.47"
-  janus_http_port: 8088
+  video_service_name: "webbot-video.service"
+  video_script_path: "/home/nvidia/bin/webbot-video.sh"
+  video_unit_path: "/home/nvidia/.config/systemd/user/webbot-video.service"
+  control_service_name: "webbot-media-control.service"
+  control_script_path: "/home/nvidia/bin/webbot-media-control.py"
+  control_unit_path: "/home/nvidia/.config/systemd/user/webbot-media-control.service"
+  # 云服务器本机通过反向隧道访问 Jetson 上的 Janus HTTP API
+  janus_host: "127.0.0.1"
+  janus_http_port: 18088
   janus_api_path: "/janus"
-  janus_demo_port: 8000
+  janus_demo_port: 18000
+  control_proxy_host: "127.0.0.1"
+  control_proxy_port: 19110
   janus_binary: "/opt/janus/bin/janus"
   janus_html_dir: "/opt/janus/share/janus/html"
   adapter_asset: "adapter.min.js"
@@ -55,6 +74,22 @@ media:
   video_framerate: "30/1"
   video_bitrate: 4000
   preferred_video_stream_id: 101
+
+# Jetson 人脸识别服务配置
+face:
+  service_name: "webbot-face.service"
+  service_script_path: "/home/nvidia/bin/webbot-face-service.py"
+  service_unit_path: "/home/nvidia/.config/systemd/user/webbot-face.service"
+  proxy_host: "127.0.0.1"
+  proxy_port: 19100
+  api_path: "/faces/latest"
+  health_path: "/health"
+  poll_interval_ms: 150
+  video_device: "/dev/video0"
+  frame_width: 1280
+  frame_height: 720
+  inference_interval_ms: 150
+  score_threshold: 0.35
 
 # 话题配置
 topics:

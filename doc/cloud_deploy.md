@@ -3,35 +3,43 @@
 当前部署目标：
 
 - 云服务器公网 IP：`182.43.86.126`
-- 云服务器 Tailscale IP：`100.97.93.120`
-- Jetson Tailscale IP：`100.108.168.47`
+- Jetson 局域网 IP：`192.168.43.100`
 
 当前仓库已经按这套链路调整过本地配置：
 
 - 浏览器访问云服务器 `http://182.43.86.126`
 - 前端 API 走云服务器 `/api`
 - 前端 ROS WebSocket 走云服务器 `ws://182.43.86.126/rosbridge/`
-- 云服务器通过 Tailscale 转发到 Jetson `100.108.168.47:9090`
-- Janus 仍部署在 Jetson `100.108.168.47`
+- Jetson 主动通过反向 SSH 把 `rosbridge`、`Janus HTTP`、`janus-demo`、`face service` 暴露到云服务器本机回环端口
+- Janus 仍部署在 Jetson 本机，不部署在云服务器
 
 ## 本地已改内容
 
 - [robot_config.yaml](/home/c6h4o2/dev/web/ROS/packages/server/config/robot_config.yaml)
   - `server.host` 改为 `182.43.86.126`
-  - `jetson.host` 改为 `100.108.168.47`
+  - `jetson.host` 改为 `192.168.43.100`
   - `frontend.ws_url` 改为 `ws://182.43.86.126/rosbridge/`
-  - `media.janus_host` 改为 `100.108.168.47`
+  - `media.janus_host` 改为 `127.0.0.1`
+  - 新增 `reverse_tunnel` 配置
+  - 新增 `face` 配置
 - [index.ts](/home/c6h4o2/dev/web/ROS/packages/server/src/index.ts)
   - `/api/config` 会下发 `rosbridgeUrl`
   - Janus API 和 Demo 地址会下发为云服务器代理地址
+  - 新增 `/api/face/health` 与 `/api/face/latest`
 - [App.tsx](/home/c6h4o2/dev/web/ROS/packages/client/src/App.tsx)
   - 前端改为使用后端下发的 `rosbridgeUrl`
+  - 前端接入人脸识别状态与 overlay
 - [vite.config.ts](/home/c6h4o2/dev/web/ROS/packages/client/vite.config.ts)
   - 本地开发增加 `/rosbridge` 代理
 - [system_manager_node.py](/home/c6h4o2/dev/web/ROS/packages/server/src/system_manager_node.py)
 - [system_manager.launch.py](/home/c6h4o2/dev/web/ROS/packages/server/launch/system_manager.launch.py)
   - 默认上传服务器地址改为 `http://182.43.86.126:4001`
   - Jetson 保存地图后会主动上传到云服务器
+- [webbot-reverse-tunnel.service](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-reverse-tunnel.service)
+  - Jetson 主动建立反向 SSH 隧道
+- [webbot-face-service.py](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-face-service.py)
+- [webbot-face.service](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-face.service)
+  - Jetson 本地提供人脸识别元数据服务
 
 ## 云服务器需要放置的文件
 
@@ -42,10 +50,16 @@
 
 ## Jetson 需要放置的文件
 
+- 反向隧道 systemd 模板：
+  - [webbot-reverse-tunnel.service](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-reverse-tunnel.service)
 - 媒体启动脚本模板：
   - [webbot-media.sh](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-media.sh)
 - 媒体 systemd 模板：
   - [webbot-media.service](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-media.service)
+- 人脸识别脚本模板：
+  - [webbot-face-service.py](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-face-service.py)
+- 人脸识别 systemd 模板：
+  - [webbot-face.service](/home/c6h4o2/dev/web/ROS/packages/server/systemd/webbot-face.service)
 
 ## 云服务器部署步骤
 
@@ -109,12 +123,12 @@ sudo systemctl reload nginx
 
 - 直接托管 `/usr/share/nginx/html/webbot` 下的前端静态文件
 - 把 `/api/` 转发到本机 `127.0.0.1:4001`
-- 把 `/rosbridge/` 转发到 Jetson `100.108.168.47:9090`
-- 把 `/janus-demo/` 转发到 Jetson `100.108.168.47:8000`
+- 把 `/rosbridge/` 转发到本机 `127.0.0.1:19090`
+- 把 `/janus-demo/` 转发到本机 `127.0.0.1:18000`
 
 ## Jetson 需要确认的项目
 
-### 1. rosbridge 对 Tailscale 可访问
+### 1. rosbridge 在 Jetson 本机可访问
 
 确保 Jetson 上 `rosbridge_websocket` 监听 `0.0.0.0:9090`。
 
@@ -144,14 +158,65 @@ systemctl --user enable --now webbot-media.service
 
 要真正出音视频，还是需要把脚本里的设备名改成 Jetson 当前实际存在的设备。
 
-### 3. system_manager_node 使用新地址
+### 3. 部署反向 SSH 隧道
+
+Jetson 需要主动连到云服务器，并把本地端口映射到云服务器本机回环：
+
+```bash
+install -Dm644 packages/server/systemd/webbot-reverse-tunnel.service ~/.config/systemd/user/webbot-reverse-tunnel.service
+systemctl --user daemon-reload
+systemctl --user enable --now webbot-reverse-tunnel.service
+systemctl --user status webbot-reverse-tunnel.service
+```
+
+这条隧道会把下面这些 Jetson 本地服务映射到云服务器 `127.0.0.1`：
+
+- `9090 -> 19090` `rosbridge`
+- `8088 -> 18088` `Janus HTTP API`
+- `8000 -> 18000` `janus-demo`
+- `19100 -> 19100` `face service`
+
+### 4. 部署 Jetson 人脸识别服务
+
+```bash
+install -Dm755 packages/server/systemd/webbot-face-service.py ~/bin/webbot-face-service.py
+install -Dm644 packages/server/systemd/webbot-face.service ~/.config/systemd/user/webbot-face.service
+systemctl --user daemon-reload
+systemctl --user enable --now webbot-face.service
+systemctl --user status webbot-face.service
+```
+
+默认约定 Jetson 上的人脸模型目录是：
+
+```bash
+~/face
+```
+
+建议单独创建虚拟环境，避免污染 Jetson 现有 ROS/Python 环境：
+
+```bash
+python3 -m venv --system-site-packages ~/face/.venv
+~/face/.venv/bin/pip install --upgrade pip
+~/face/.venv/bin/pip install "numpy<2" "opencv-python-headless<4.10" "matplotlib==3.10.7" insightface==0.7.3
+```
+
+其中至少需要：
+
+- `~/face/insightface`
+- `~/face/registry.json`
+- `~/face/face_db/`
+
+当前实现里，人脸服务不直接读取 `/dev/video0`，而是消费 `webbot-media.service` 在 `~/.local/state/webbot-media/frames/` 下持续刷新的 JPEG 帧。
+也就是说，`webbot-media.service` 和 `webbot-face.service` 需要一起运行。
+
+### 5. system_manager_node 使用新地址
 
 重新构建并安装 ROS 包，确保这两个文件的新默认值生效：
 
 - [system_manager_node.py](/home/c6h4o2/dev/web/ROS/packages/server/src/system_manager_node.py)
 - [system_manager.launch.py](/home/c6h4o2/dev/web/ROS/packages/server/launch/system_manager.launch.py)
 
-### 4. 不再要求云服务器 SSH 到 Jetson
+### 6. 不再要求云服务器 SSH 到 Jetson
 
 当前代码已经去掉了服务器侧通过 SSH/SCP 管理 Jetson 的残留逻辑：
 
@@ -164,22 +229,24 @@ systemctl --user enable --now webbot-media.service
 ## 联调检查顺序
 
 1. 云服务器执行 `curl http://127.0.0.1:4001/api/health`
-2. 云服务器执行 `curl http://100.108.168.47:9090`
-3. 云服务器执行 `curl http://100.108.168.47:8088/janus`
-4. 云服务器执行 `curl http://100.108.168.47:8000`
+2. 云服务器执行 `curl http://127.0.0.1:19090`
+3. 云服务器执行 `curl http://127.0.0.1:18088/janus`
+4. 云服务器执行 `curl http://127.0.0.1:18000`
+5. 云服务器执行 `curl http://127.0.0.1:19100/health`
 5. 浏览器打开 `http://182.43.86.126`
 6. 浏览器确认 `/api/config` 返回 `rosbridgeUrl` 和 Janus 代理地址
 7. 页面确认 ROS 连接成功
-8. 再测试地图同步、SLAM、导航和音视频
+8. 页面确认视频流和人脸框 overlay 正常
+9. 再测试地图同步、SLAM、导航和音视频
 
 ## 还没做的事
 
 - 还没有配置 HTTPS/WSS
-- Janus 媒体面如果要给公网浏览器用，还需要确认 Jetson 的 ICE/TURN 配置
+- Janus 媒体面如果要给公网浏览器用，还需要确认 Jetson 的 ICE/STUN/TURN 配置
 
 如果下一步要上正式公网，建议继续做：
 
 1. 域名
 2. HTTPS
 3. `wss://` rosbridge
-4. Janus 的 ICE/TURN 配置检查
+4. Janus 的 ICE/STUN/TURN 配置检查

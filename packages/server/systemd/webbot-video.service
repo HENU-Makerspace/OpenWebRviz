@@ -1,0 +1,17 @@
+[Unit]
+Description=WebBot On-Demand Video Pipeline
+After=webbot-media.service
+Requires=webbot-media.service
+
+[Service]
+Type=simple
+ExecStartPre=%h/bin/webbot-video.sh cleanup-only
+ExecStart=%h/bin/webbot-video.sh
+ExecStopPost=%h/bin/webbot-video.sh cleanup-only
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

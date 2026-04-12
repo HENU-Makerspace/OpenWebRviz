@@ -1,0 +1,14 @@
+[Unit]
+Description=WebBot Local Media Control API
+After=webbot-media.service
+Requires=webbot-media.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 %h/bin/webbot-media-control.py --host 127.0.0.1 --port 19110 --video-service webbot-video.service --media-service webbot-media.service --frame-dir %h/.local/state/webbot-media/frames --video-device /dev/video0 --start-timeout-ms 12000
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=WebBot Face Recognition Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/face/.venv/bin/python %h/bin/webbot-face-service.py --host 127.0.0.1 --port 19100 --frame-dir %h/.local/state/webbot-media/frames --device /dev/video0 --width 1280 --height 720 --interval-ms 150 --frame-stale-ms 1500 --similarity-threshold 0.35 --model-root %h/face/insightface --face-db-dir %h/face/face_db --registry-path %h/face/registry.json
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
