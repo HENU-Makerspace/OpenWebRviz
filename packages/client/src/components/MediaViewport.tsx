@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Mic, Play, RefreshCw, ScanFace, VideoOff, Volume2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
+import { Loader2, Mic, Play, RefreshCw, VideoOff, Volume2 } from 'lucide-react';
 import type { FaceSnapshot } from '../hooks/useFaceRecognition';
 
 interface MediaViewportProps {
@@ -82,138 +80,107 @@ export function MediaViewport({
   }, [faceSnapshot.frameHeight, faceSnapshot.frameWidth, videoSize]);
 
   return (
-    <div className="w-full">
-      <Card className="overflow-hidden border-slate-200 bg-white text-slate-900 shadow-sm">
-        <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-slate-200 px-3 py-2">
-          <div className="space-y-1">
-            <CardTitle className="text-sm text-slate-800">Robot Camera</CardTitle>
-            <div className="flex items-center gap-2">
-              <Badge variant={videoConnected ? 'success' : 'outline'}>
-                {videoConnected ? 'Live' : 'Standby'}
-              </Badge>
-              {audioMonitoring && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  <Volume2 className="h-3.5 w-3.5" />
-                  Monitor
-                </span>
-              )}
-              {talkbackActive && (
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                  <Mic className="h-3.5 w-3.5" />
-                  Talkback
-                </span>
-              )}
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
-                <ScanFace className="h-3.5 w-3.5" />
-                {faceSnapshot.online ? `${faceSnapshot.faces.length} face(s)` : 'Face offline'}
-              </span>
-            </div>
+    <div className="w-full space-y-2">
+      <div className="relative overflow-hidden rounded-xl bg-black shadow-sm">
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          controls={videoConnected}
+          className={`aspect-video w-full bg-black object-contain ${videoConnected ? 'block' : 'opacity-0'}`}
+        />
+        {!videoConnected && (
+          <div className="absolute inset-0 flex aspect-video items-center justify-center bg-gradient-to-br from-slate-800 via-slate-900 to-black text-slate-500">
+            <VideoOff className="h-9 w-9" />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-2 p-2">
-          <div className="relative overflow-hidden rounded-lg border border-slate-200 bg-black">
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              controls={videoConnected}
-              className={`aspect-video w-full bg-black object-contain ${videoConnected ? 'block' : 'opacity-0'}`}
-            />
-            {!videoConnected && (
-              <div className="absolute inset-0 flex aspect-video flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-black text-slate-500">
-                <VideoOff className="mb-2 h-9 w-9" />
-                <div className="text-[10px] uppercase tracking-[0.24em]">Video Standby</div>
+        )}
+        {videoConnected && overlayGeometry && faceSnapshot.faces.map((face) => {
+          const left = overlayGeometry.offsetX + face.bbox.x * overlayGeometry.scale;
+          const top = overlayGeometry.offsetY + face.bbox.y * overlayGeometry.scale;
+          const width = face.bbox.w * overlayGeometry.scale;
+          const height = face.bbox.h * overlayGeometry.scale;
+
+          return (
+            <div
+              key={face.id}
+              className="pointer-events-none absolute border-2 border-emerald-400"
+              style={{
+                left,
+                top,
+                width,
+                height,
+              }}
+            >
+              <div className="absolute left-0 top-0 -translate-y-full rounded bg-emerald-500/90 px-2 py-0.5 text-[11px] font-medium text-white shadow">
+                {face.label}
               </div>
-            )}
-            {videoConnected && overlayGeometry && faceSnapshot.faces.map((face) => {
-              const left = overlayGeometry.offsetX + face.bbox.x * overlayGeometry.scale;
-              const top = overlayGeometry.offsetY + face.bbox.y * overlayGeometry.scale;
-              const width = face.bbox.w * overlayGeometry.scale;
-              const height = face.bbox.h * overlayGeometry.scale;
-
-              return (
-                <div
-                  key={face.id}
-                  className="pointer-events-none absolute border-2 border-emerald-400"
-                  style={{
-                    left,
-                    top,
-                    width,
-                    height,
-                  }}
-                >
-                  <div className="absolute left-0 top-0 -translate-y-full rounded bg-emerald-500/90 px-2 py-0.5 text-[11px] font-medium text-white shadow">
-                    {face.label}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="grid grid-cols-4 gap-2">
-            <button
-              type="button"
-              title="刷新"
-              aria-label="刷新媒体状态"
-              onClick={onRefresh}
-              disabled={busy}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loadingAction === 'status' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            </button>
-            <button
-              type="button"
-              title={videoConnected ? '关闭视频' : '打开视频'}
-              aria-label={videoConnected ? '关闭视频' : '打开视频'}
-              onClick={onToggleVideo}
-              disabled={busy}
-              className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                videoConnected
-                  ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {loadingAction === 'video' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            </button>
-            <button
-              type="button"
-              title={audioMonitoring ? '停止监听' : '监听'}
-              aria-label={audioMonitoring ? '停止监听' : '监听'}
-              onClick={onToggleAudio}
-              disabled={busy}
-              className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                audioMonitoring
-                  ? 'border-sky-300 bg-sky-50 text-sky-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {loadingAction === 'audio' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
-            </button>
-            <button
-              type="button"
-              title={talkbackActive ? '结束对讲' : '对讲'}
-              aria-label={talkbackActive ? '结束对讲' : '对讲'}
-              onClick={onToggleTalkback}
-              disabled={busy}
-              className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                talkbackActive
-                  ? 'border-amber-300 bg-amber-50 text-amber-700'
-                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              {loadingAction === 'talkback' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-            </button>
-          </div>
-
-          {error && (
-            <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-600">
-              {error}
             </div>
-          )}
+          );
+        })}
+      </div>
 
-          <audio ref={audioRef} autoPlay playsInline />
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-4 gap-2">
+        <button
+          type="button"
+          title="刷新"
+          aria-label="刷新媒体状态"
+          onClick={onRefresh}
+          disabled={busy}
+          className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {loadingAction === 'status' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          title={videoConnected ? '关闭视频' : '打开视频'}
+          aria-label={videoConnected ? '关闭视频' : '打开视频'}
+          onClick={onToggleVideo}
+          disabled={busy}
+          className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            videoConnected
+              ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          {loadingAction === 'video' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          title={audioMonitoring ? '停止监听' : '监听'}
+          aria-label={audioMonitoring ? '停止监听' : '监听'}
+          onClick={onToggleAudio}
+          disabled={busy}
+          className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            audioMonitoring
+              ? 'border-sky-300 bg-sky-50 text-sky-700'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          {loadingAction === 'audio' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+        </button>
+        <button
+          type="button"
+          title={talkbackActive ? '结束对讲' : '对讲'}
+          aria-label={talkbackActive ? '结束对讲' : '对讲'}
+          onClick={onToggleTalkback}
+          disabled={busy}
+          className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+            talkbackActive
+              ? 'border-amber-300 bg-amber-50 text-amber-700'
+              : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          {loadingAction === 'talkback' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+        </button>
+      </div>
+
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1 text-[11px] text-red-600">
+          {error}
+        </div>
+      )}
+
+      <audio ref={audioRef} autoPlay playsInline />
     </div>
   );
 }

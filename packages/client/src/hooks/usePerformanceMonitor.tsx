@@ -66,9 +66,9 @@ export function DebugPanel() {
   return (
     <div className="absolute top-4 left-4 bg-black/80 text-green-400 px-3 py-2 rounded text-xs font-mono">
       <div>FPS: {stats.fps}</div>
-      <div>Map: {stats.mapUpdates}/s</div>
+      <div>地图: {stats.mapUpdates}/s</div>
       <div>TF: {stats.tfUpdates}/s</div>
-      <div>Laser: {stats.laserUpdates}/s</div>
+      <div>激光: {stats.laserUpdates}/s</div>
     </div>
   );
 }

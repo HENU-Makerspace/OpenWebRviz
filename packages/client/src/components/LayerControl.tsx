@@ -90,12 +90,12 @@ export function LayerControl() {
   const { layers, toggleLayer } = useLayers();
 
   const layersConfig = [
-    { key: 'map' as const, label: 'Map', color: 'bg-blue-500' },
-    { key: 'tf' as const, label: 'Robot (TF)', color: 'bg-green-500' },
-    { key: 'scan' as const, label: 'Laser Scan', color: 'bg-cyan-500' },
-    { key: 'globalPlan' as const, label: 'Global Plan', color: 'bg-purple-500' },
-    { key: 'localPlan' as const, label: 'Local Plan', color: 'bg-yellow-500' },
-    { key: 'image' as const, label: 'Camera Image', color: 'bg-pink-500' },
+    { key: 'map' as const, label: '地图', color: 'bg-blue-500' },
+    { key: 'tf' as const, label: '机器人 (TF)', color: 'bg-green-500' },
+    { key: 'scan' as const, label: '激光雷达', color: 'bg-cyan-500' },
+    { key: 'globalPlan' as const, label: '全局路径', color: 'bg-purple-500' },
+    { key: 'localPlan' as const, label: '局部路径', color: 'bg-yellow-500' },
+    { key: 'image' as const, label: '相机图像', color: 'bg-pink-500' },
   ] as const;
 
   // Data Reception controls are intentionally hidden for the simplified operator UI.
@@ -103,7 +103,7 @@ export function LayerControl() {
 
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold text-gray-700">Layers</h2>
+      <h2 className="text-lg font-semibold text-gray-700">图层</h2>
 
       <div className="space-y-2">
         {layersConfig.map(({ key, label, color }) => (

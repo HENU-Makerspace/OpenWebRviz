@@ -21,25 +21,25 @@ export function ConnectionStatus({
       icon: Wifi,
       color: 'text-green-600',
       bg: 'bg-green-50',
-      label: 'Connected',
+      label: '已连接',
     },
     connecting: {
       icon: RefreshCw,
       color: 'text-yellow-600',
       bg: 'bg-yellow-50',
-      label: 'Connecting...',
+      label: '连接中...',
     },
     error: {
       icon: AlertCircle,
       color: 'text-red-600',
       bg: 'bg-red-50',
-      label: 'Error',
+      label: '错误',
     },
     disconnected: {
       icon: WifiOff,
       color: 'text-gray-400',
       bg: 'bg-gray-100',
-      label: 'Disconnected',
+      label: '未连接',
     },
   };
 
@@ -73,7 +73,7 @@ export function ConnectionStatus({
               ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
           }`}
-          title="Reconnect"
+          title="重新连接"
         >
           <RefreshCw size={16} className={isConnecting ? 'animate-spin' : ''} />
         </button>
@@ -81,7 +81,7 @@ export function ConnectionStatus({
 
       {reconnectCount > 0 && (
         <span className="text-xs text-gray-400">
-          {reconnectCount} attempt{reconnectCount > 1 ? 's' : ''}
+          已重试 {reconnectCount} 次
         </span>
       )}
     </div>

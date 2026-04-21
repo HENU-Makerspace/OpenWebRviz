@@ -151,7 +151,7 @@ export function MapCanvas({
       ctx.font = '16px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText(
-        isConnected ? 'Waiting for map data...' : 'Not connected to ROS',
+        isConnected ? '正在等待地图数据...' : '尚未连接 ROS',
         width / 2,
         height / 2
       );
@@ -227,7 +227,7 @@ export function MapCanvas({
 
       ctx.fillStyle = '#22c55e';
       ctx.font = '12px sans-serif';
-      ctx.fillText('base_link', robotScreenX + 12, robotScreenY - 12);
+      ctx.fillText('机器人', robotScreenX + 12, robotScreenY - 12);
     }
 
     if (layers.globalPlan && globalPath && globalPath.points.length > 0) {
@@ -323,7 +323,7 @@ export function MapCanvas({
       ctx.fill();
 
       ctx.font = '12px sans-serif';
-      ctx.fillText('origin', originMarkerX + 8, originMarkerY - 8);
+      ctx.fillText('原点', originMarkerX + 8, originMarkerY - 8);
     }
 
     if (navDrag) {
@@ -367,7 +367,7 @@ export function MapCanvas({
       ctx.fillStyle = color;
       ctx.font = '12px sans-serif';
       ctx.fillText(
-        navDrag.mode === 'initial_pose' ? 'Initial Pose' : 'Goal',
+        navDrag.mode === 'initial_pose' ? '初始位姿' : '目标点',
         start.x + 10,
         start.y - 10
       );
@@ -535,29 +535,29 @@ if (mode === 'navigation' && displayMapData && navClickMode !== 'none') {
 
       {overlayMap && (
         <div className="absolute bottom-4 left-4 bg-black/70 text-white px-3 py-2 rounded text-xs">
-          <div>Resolution: {overlayMap.info.resolution.toFixed(3)} m/cell</div>
-          <div>Size: {overlayMap.info.width} x {overlayMap.info.height}</div>
-          <div>Scale: {view.scale.toFixed(1)} px/m</div>
-          <div>Mode: {mode === 'navigation' ? 'Frozen first /map' : 'Live /map'}</div>
+          <div>分辨率：{overlayMap.info.resolution.toFixed(3)} m/cell</div>
+          <div>尺寸：{overlayMap.info.width} x {overlayMap.info.height}</div>
+          <div>缩放：{view.scale.toFixed(1)} px/m</div>
+          <div>模式：{mode === 'navigation' ? '冻结首帧 /map' : '实时 /map'}</div>
         </div>
       )}
 
       <div className="absolute top-4 right-4 bg-black/70 text-white px-3 py-2 rounded text-xs space-y-1">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-white border border-gray-600"></div>
-          <span>Free (0)</span>
+          <span>空闲 (0)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-500 border border-gray-600"></div>
-          <span>Unknown (-1)</span>
+          <span>未知 (-1)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-900 border border-gray-600"></div>
-          <span>Occupied (100)</span>
+          <span>占用 (100)</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 rounded-full bg-green-500"></div>
-          <span>Robot</span>
+          <span>机器人</span>
         </div>
       </div>
     </div>

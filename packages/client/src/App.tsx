@@ -70,19 +70,19 @@ function RosbridgePanel({
           onClick={reconnect}
           className="w-full px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600"
         >
-          Connect to Robot
+          连接机器人
         </button>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-green-600">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            Connected to Robot
+            已连接机器人
           </div>
           <button
             onClick={disconnect}
             className="w-full px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
           >
-            Disconnect
+            断开连接
           </button>
         </div>
       )}
@@ -127,7 +127,7 @@ function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) 
     return (
       <div className="space-y-3">
         <h3 className="text-sm font-medium text-gray-500">SLAM</h3>
-        <div className="text-xs text-gray-400">Checking status...</div>
+        <div className="text-xs text-gray-400">正在检查状态...</div>
       </div>
     );
   }
@@ -143,35 +143,35 @@ function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) 
             disabled={robotStatus.loading || slamLoading}
             className="w-full px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600 disabled:opacity-50"
           >
-            {robotStatus.loading || slamLoading ? 'Starting...' : 'Start SLAM'}
+            {robotStatus.loading || slamLoading ? '启动中...' : '启动 SLAM'}
           </button>
         </div>
       ) : (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-xs text-green-600">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            SLAM Running {isRobotMode ? '(Robot)' : usingTmux ? '(TMUX)' : ''}
+            SLAM 运行中 {isRobotMode ? '(机器人)' : usingTmux ? '(TMUX)' : ''}
           </div>
           <button
             onClick={handleSaveMap}
             disabled={saving}
             className="w-full px-3 py-2 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save Map'}
+            {saving ? '保存中...' : '保存地图'}
           </button>
           <button
             onClick={handleStopSlam}
             disabled={robotStatus.loading || slamLoading}
             className="w-full px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600 disabled:opacity-50"
           >
-            {robotStatus.loading || slamLoading ? 'Stopping...' : 'Stop SLAM'}
+            {robotStatus.loading || slamLoading ? '停止中...' : '停止 SLAM'}
           </button>
         </div>
       )}
 
       {maps.length > 0 && (
         <div className="pt-2 border-t">
-          <h4 className="text-xs font-medium text-gray-500 mb-2">Saved Maps</h4>
+          <h4 className="text-xs font-medium text-gray-500 mb-2">已保存地图</h4>
           <div className="space-y-1 max-h-32 overflow-y-auto">
             {maps.map((map) => (
               <div
@@ -238,27 +238,27 @@ function NavigationPanel({
   };
 
   if (loading) {
-    return <div className="text-xs text-gray-500">Scanning for maps...</div>;
+    return <div className="text-xs text-gray-500">正在扫描地图...</div>;
   }
 
   if (maps.length === 0) {
     return (
       <div className="text-xs text-yellow-600 bg-yellow-50 p-2 rounded">
-        No maps found. Please use Teleop mode to create a map first.
+        没有找到地图，请先在 Teleop 模式下建图。
       </div>
     );
   }
 
   return (
     <div className="space-y-2">
-      <h4 className="text-xs font-medium text-gray-500">Select Map</h4>
+      <h4 className="text-xs font-medium text-gray-500">选择地图</h4>
       <select
         value={selectedMap || ''}
         onChange={(e) => setSelectedMap(e.target.value || null)}
         className="w-full px-2 py-1 text-xs border rounded"
         disabled={isNavRunning}
       >
-        <option value="">-- Select Map --</option>
+        <option value="">-- 请选择地图 --</option>
         {maps.map((map) => (
           <option key={map.name} value={map.name}>
             {map.name}
@@ -268,7 +268,7 @@ function NavigationPanel({
 
       {/* Stance selection - disabled during navigation */}
       <div className="space-y-1">
-        <h4 className="text-xs font-medium text-gray-500">Stance</h4>
+        <h4 className="text-xs font-medium text-gray-500">姿态</h4>
         <div className="flex gap-2">
           <button
             onClick={() => setStance('crouch')}
@@ -279,7 +279,7 @@ function NavigationPanel({
                 : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
             } disabled:opacity-50`}
           >
-            Crouch
+            蹲姿
           </button>
           <button
             onClick={() => setStance('stand')}
@@ -290,14 +290,14 @@ function NavigationPanel({
                 : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
             } disabled:opacity-50`}
           >
-            Stand
+            站立
           </button>
         </div>
       </div>
 
       {/* Speed selection - disabled during navigation */}
       <div className="space-y-1">
-        <h4 className="text-xs font-medium text-gray-500">Speed</h4>
+        <h4 className="text-xs font-medium text-gray-500">速度</h4>
         <div className="flex gap-1">
           <button
             onClick={() => setSpeed('high')}
@@ -308,7 +308,7 @@ function NavigationPanel({
                 : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
             } disabled:opacity-50`}
           >
-            High
+            高
           </button>
           <button
             onClick={() => setSpeed('medium')}
@@ -319,7 +319,7 @@ function NavigationPanel({
                 : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
             } disabled:opacity-50`}
           >
-            Medium
+            中
           </button>
           <button
             onClick={() => setSpeed('low')}
@@ -330,7 +330,7 @@ function NavigationPanel({
                 : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
             } disabled:opacity-50`}
           >
-            Low
+            低
           </button>
         </div>
       </div>
@@ -341,15 +341,15 @@ function NavigationPanel({
           disabled={starting}
           className="w-full bg-purple-600 text-white text-xs py-1 px-2 rounded hover:bg-purple-700 disabled:opacity-50"
         >
-          {starting ? 'Starting...' : `Start Nav (${stance === 'stand' ? 'Stand' : 'Crouch'}, ${speed})`}
+          {starting ? '启动中...' : `启动导航（${stance === 'stand' ? '站立' : '蹲姿'}，${speed === 'high' ? '高速' : speed === 'medium' ? '中速' : '低速'}）`}
         </button>
       )}
 
       {isNavRunning && (
         <div className="space-y-2">
-          <div className="text-xs text-green-600">Navigation Running</div>
+          <div className="text-xs text-green-600">导航运行中</div>
 
-          <div className="text-xs text-gray-500">Click Mode</div>
+          <div className="text-xs text-gray-500">点击模式</div>
           <div className="flex gap-1">
             <button
               onClick={() => setNavClickMode(navClickMode === 'initial_pose' ? 'none' : 'initial_pose')}
@@ -359,7 +359,7 @@ function NavigationPanel({
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              Set Initial Pose
+              设置初始位姿
             </button>
             <button
               onClick={() => setNavClickMode(navClickMode === 'goal' ? 'none' : 'goal')}
@@ -369,7 +369,7 @@ function NavigationPanel({
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              Set Goal
+              设置目标点
             </button>
           </div>
 
@@ -377,7 +377,7 @@ function NavigationPanel({
             onClick={stopNavigation}
             className="w-full bg-red-500 text-white text-xs py-1 px-2 rounded hover:bg-red-600"
           >
-            Stop Navigation
+            停止导航
           </button>
         </div>
       )}
@@ -449,7 +449,7 @@ function AppContent() {
           <h1 className="text-xl font-bold text-gray-800">WebBot-Viz</h1>
 
           <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">Mode:</span>
+            <span className="text-xs text-gray-500">模式：</span>
             <button
               onClick={() => setMode('teleop')}
               className={`px-3 py-1 text-xs rounded ${
@@ -458,7 +458,7 @@ function AppContent() {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              Teleop
+              遥控
             </button>
             <button
               onClick={() => setMode('navigation')}
@@ -468,7 +468,7 @@ function AppContent() {
                   : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
               }`}
             >
-              Navigation
+              导航
             </button>
           </div>
 
@@ -476,7 +476,7 @@ function AppContent() {
             onClick={() => setShowDebug(!showDebug)}
             className="text-xs text-gray-400 hover:text-gray-600"
           >
-            {showDebug ? 'Hide Debug' : 'Show Debug'}
+            {showDebug ? '隐藏调试' : '显示调试'}
           </button>
         </div>
         <ConnectionStatus
@@ -562,13 +562,13 @@ function AppContent() {
 
       {isConnected && mode === 'teleop' && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded text-sm">
-          <span className="font-mono">W/A/S/D</span> or <span className="font-mono">Arrow Keys</span> to move
+          使用 <span className="font-mono">W/A/S/D</span> 或 <span className="font-mono">方向键</span> 移动
         </div>
       )}
 
       {isConnected && mode === 'navigation' && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded text-sm">
-          Click on the map to set a navigation goal
+          在地图上点击以设置导航目标
         </div>
       )}
     </div>
