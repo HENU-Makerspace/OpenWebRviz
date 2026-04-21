@@ -82,8 +82,8 @@ export function MediaViewport({
   }, [faceSnapshot.frameHeight, faceSnapshot.frameWidth, videoSize]);
 
   return (
-    <div className="absolute bottom-4 left-4 z-20 w-[360px] max-w-[calc(100%-2rem)]">
-      <Card className="overflow-hidden border-slate-700/70 bg-slate-950/95 text-white shadow-2xl shadow-black/30 backdrop-blur">
+    <div className="w-full">
+      <Card className="overflow-hidden border-slate-700/70 bg-slate-950/95 text-white shadow-lg shadow-black/20">
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-white/10 px-3 py-2">
           <div className="space-y-1">
             <CardTitle className="text-sm text-white">Robot Camera</CardTitle>
@@ -122,7 +122,7 @@ export function MediaViewport({
             {!videoConnected && (
               <div className="absolute inset-0 flex aspect-video flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-black text-slate-500">
                 <VideoOff className="mb-2 h-9 w-9" />
-                <div className="text-xs uppercase tracking-[0.3em]">Video Standby</div>
+                <div className="text-[10px] uppercase tracking-[0.24em]">Video Standby</div>
               </div>
             )}
             {videoConnected && overlayGeometry && faceSnapshot.faces.map((face) => {

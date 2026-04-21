@@ -494,31 +494,6 @@ function AppContent() {
             reconnect={reconnect}
             disconnect={disconnect}
           />
-          {mode === 'teleop' ? (
-            <MappingPanel ros={ros} isConnected={isConnected} />
-          ) : (
-            <NavigationPanel
-              navClickMode={navClickMode}
-              setNavClickMode={setNavClickMode}
-              selectedMap={selectedMap}
-              setSelectedMap={setSelectedMap}
-              ros={ros}
-              isConnected={isConnected}
-            />
-          )}
-          {/* Media controls moved to the bottom-left camera viewport. */}
-          {/* NetworkPanel is hidden for the simplified operator UI. */}
-        </aside>
-
-        <main className="flex-1 relative">
-          {showDebug && <DebugPanel />}
-          <MapCanvas
-            ros={ros}
-            isConnected={isConnected}
-            navClickMode={navClickMode}
-            setNavClickMode={setNavClickMode}
-            selectedMap={selectedMap}
-          />
           <MediaViewport
             videoRef={media.videoRef}
             audioRef={media.audioRef}
@@ -550,6 +525,31 @@ function AppContent() {
               }
               void media.startTalkback();
             }}
+          />
+          {mode === 'teleop' ? (
+            <MappingPanel ros={ros} isConnected={isConnected} />
+          ) : (
+            <NavigationPanel
+              navClickMode={navClickMode}
+              setNavClickMode={setNavClickMode}
+              selectedMap={selectedMap}
+              setSelectedMap={setSelectedMap}
+              ros={ros}
+              isConnected={isConnected}
+            />
+          )}
+          {/* Media controls moved to the bottom-left camera viewport. */}
+          {/* NetworkPanel is hidden for the simplified operator UI. */}
+        </aside>
+
+        <main className="flex-1 relative">
+          {showDebug && <DebugPanel />}
+          <MapCanvas
+            ros={ros}
+            isConnected={isConnected}
+            navClickMode={navClickMode}
+            setNavClickMode={setNavClickMode}
+            selectedMap={selectedMap}
           />
           <div className="absolute bottom-4 right-4 z-20 w-64 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
             <LayerControl />
