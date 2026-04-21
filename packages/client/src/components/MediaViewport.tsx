@@ -1,28 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Volume2, Mic, ScanFace } from 'lucide-react';
+import { Loader2, Mic, Play, RefreshCw, ScanFace, VideoOff, Volume2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import type { FaceSnapshot } from '../hooks/useFaceRecognition';
 
 interface MediaViewportProps {
   videoRef: React.RefObject<HTMLVideoElement>;
+  audioRef: React.RefObject<HTMLAudioElement>;
   videoConnected: boolean;
   audioMonitoring: boolean;
   talkbackActive: boolean;
+  loadingAction: string | null;
+  error: string | null;
   faceSnapshot: FaceSnapshot;
-  onCloseVideo: () => void;
+  onRefresh: () => void;
+  onToggleVideo: () => void;
+  onToggleAudio: () => void;
+  onToggleTalkback: () => void;
 }
 
 export function MediaViewport({
   videoRef,
+  audioRef,
   videoConnected,
   audioMonitoring,
   talkbackActive,
+  loadingAction,
+  error,
   faceSnapshot,
-  onCloseVideo,
+  onRefresh,
+  onToggleVideo,
+  onToggleAudio,
+  onToggleTalkback,
 }: MediaViewportProps) {
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0, sourceWidth: 0, sourceHeight: 0 });
+  const busy = loadingAction !== null;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -69,18 +81,16 @@ export function MediaViewport({
     };
   }, [faceSnapshot.frameHeight, faceSnapshot.frameWidth, videoSize]);
 
-  if (!videoConnected) {
-    return null;
-  }
-
   return (
-    <div className="absolute right-4 top-4 z-20 w-[360px] max-w-[calc(100%-2rem)]">
-      <Card className="overflow-hidden border-slate-300 shadow-xl">
-        <CardHeader className="flex-row items-center justify-between space-y-0 border-b bg-slate-950/95 text-white">
+    <div className="absolute bottom-4 left-4 z-20 w-[360px] max-w-[calc(100%-2rem)]">
+      <Card className="overflow-hidden border-slate-700/70 bg-slate-950/95 text-white shadow-2xl shadow-black/30 backdrop-blur">
+        <CardHeader className="flex-row items-center justify-between space-y-0 border-b border-white/10 px-3 py-2">
           <div className="space-y-1">
             <CardTitle className="text-sm text-white">Robot Camera</CardTitle>
             <div className="flex items-center gap-2">
-              <Badge variant="success">Live</Badge>
+              <Badge variant={videoConnected ? 'success' : 'outline'}>
+                {videoConnected ? 'Live' : 'Standby'}
+              </Badge>
               {audioMonitoring && (
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-200">
                   <Volume2 className="h-3.5 w-3.5" />
@@ -99,41 +109,109 @@ export function MediaViewport({
               </span>
             </div>
           </div>
-          <Button size="sm" variant="secondary" onClick={onCloseVideo}>
-            <X className="h-4 w-4" />
-          </Button>
         </CardHeader>
-        <CardContent className="relative bg-black p-0">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            controls
-            className="aspect-video w-full bg-black object-contain"
-          />
-          {overlayGeometry && faceSnapshot.faces.map((face) => {
-            const left = overlayGeometry.offsetX + face.bbox.x * overlayGeometry.scale;
-            const top = overlayGeometry.offsetY + face.bbox.y * overlayGeometry.scale;
-            const width = face.bbox.w * overlayGeometry.scale;
-            const height = face.bbox.h * overlayGeometry.scale;
-
-            return (
-              <div
-                key={face.id}
-                className="pointer-events-none absolute border-2 border-emerald-400"
-                style={{
-                  left,
-                  top,
-                  width,
-                  height,
-                }}
-              >
-                <div className="absolute left-0 top-0 -translate-y-full rounded bg-emerald-500/90 px-2 py-0.5 text-[11px] font-medium text-white shadow">
-                  {face.label}
-                </div>
+        <CardContent className="space-y-2 p-2">
+          <div className="relative overflow-hidden rounded-lg border border-white/10 bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              controls={videoConnected}
+              className={`aspect-video w-full bg-black object-contain ${videoConnected ? 'block' : 'opacity-0'}`}
+            />
+            {!videoConnected && (
+              <div className="absolute inset-0 flex aspect-video flex-col items-center justify-center bg-gradient-to-br from-slate-900 via-slate-950 to-black text-slate-500">
+                <VideoOff className="mb-2 h-9 w-9" />
+                <div className="text-xs uppercase tracking-[0.3em]">Video Standby</div>
               </div>
-            );
-          })}
+            )}
+            {videoConnected && overlayGeometry && faceSnapshot.faces.map((face) => {
+              const left = overlayGeometry.offsetX + face.bbox.x * overlayGeometry.scale;
+              const top = overlayGeometry.offsetY + face.bbox.y * overlayGeometry.scale;
+              const width = face.bbox.w * overlayGeometry.scale;
+              const height = face.bbox.h * overlayGeometry.scale;
+
+              return (
+                <div
+                  key={face.id}
+                  className="pointer-events-none absolute border-2 border-emerald-400"
+                  style={{
+                    left,
+                    top,
+                    width,
+                    height,
+                  }}
+                >
+                  <div className="absolute left-0 top-0 -translate-y-full rounded bg-emerald-500/90 px-2 py-0.5 text-[11px] font-medium text-white shadow">
+                    {face.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            <button
+              type="button"
+              title="刷新"
+              aria-label="刷新媒体状态"
+              onClick={onRefresh}
+              disabled={busy}
+              className="inline-flex h-10 items-center justify-center rounded-lg border border-white/10 bg-white/10 text-slate-100 transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loadingAction === 'status' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              title={videoConnected ? '关闭视频' : '打开视频'}
+              aria-label={videoConnected ? '关闭视频' : '打开视频'}
+              onClick={onToggleVideo}
+              disabled={busy}
+              className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                videoConnected
+                  ? 'border-emerald-400/50 bg-emerald-400/20 text-emerald-200'
+                  : 'border-white/10 bg-white/10 text-slate-100 hover:bg-white/20'
+              }`}
+            >
+              {loadingAction === 'video' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              title={audioMonitoring ? '停止监听' : '监听'}
+              aria-label={audioMonitoring ? '停止监听' : '监听'}
+              onClick={onToggleAudio}
+              disabled={busy}
+              className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                audioMonitoring
+                  ? 'border-sky-400/50 bg-sky-400/20 text-sky-200'
+                  : 'border-white/10 bg-white/10 text-slate-100 hover:bg-white/20'
+              }`}
+            >
+              {loadingAction === 'audio' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+            </button>
+            <button
+              type="button"
+              title={talkbackActive ? '结束对讲' : '对讲'}
+              aria-label={talkbackActive ? '结束对讲' : '对讲'}
+              onClick={onToggleTalkback}
+              disabled={busy}
+              className={`inline-flex h-10 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                talkbackActive
+                  ? 'border-amber-400/50 bg-amber-400/20 text-amber-200'
+                  : 'border-white/10 bg-white/10 text-slate-100 hover:bg-white/20'
+              }`}
+            >
+              {loadingAction === 'talkback' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
+            </button>
+          </div>
+
+          {error && (
+            <div className="rounded-md border border-red-400/30 bg-red-500/10 px-2 py-1 text-[11px] text-red-100">
+              {error}
+            </div>
+          )}
+
+          <audio ref={audioRef} autoPlay playsInline />
         </CardContent>
       </Card>
     </div>

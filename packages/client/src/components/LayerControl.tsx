@@ -87,7 +87,7 @@ export function LayerControlProvider({ children }: { children: React.ReactNode }
 }
 
 export function LayerControl() {
-  const { layers, toggleLayer, subscriptionSettings, setSubscriptionRate, toggleSubscriptionPause } = useLayers();
+  const { layers, toggleLayer } = useLayers();
 
   const layersConfig = [
     { key: 'map' as const, label: 'Map', color: 'bg-blue-500' },
@@ -98,7 +98,8 @@ export function LayerControl() {
     { key: 'image' as const, label: 'Camera Image', color: 'bg-pink-500' },
   ] as const;
 
-  const rateOptions = [0, 1, 2, 5, 10, 20, 30];
+  // Data Reception controls are intentionally hidden for the simplified operator UI.
+  // const rateOptions = [0, 1, 2, 5, 10, 20, 30];
 
   return (
     <div className="space-y-4">
@@ -121,57 +122,19 @@ export function LayerControl() {
         ))}
       </div>
 
-      {/* Data Reception Control */}
+      {/*
+      Data Reception Control is hidden for now.
       <div className="pt-4 border-t">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">Data Reception</h3>
-
-        {/* Pause/Resume */}
-        <label className="flex items-center gap-2 cursor-pointer mb-3">
-          <input
-            type="checkbox"
-            checked={subscriptionSettings.paused}
-            onChange={toggleSubscriptionPause}
-            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-          />
-          <span className="text-sm text-gray-600">Pause data reception</span>
-        </label>
-
-        {/* Rate Control */}
-        <div className="space-y-2">
-          <label className="flex items-center justify-between">
-            <span className="text-sm text-gray-600">Rate (Hz):</span>
-            <select
-              value={subscriptionSettings.rate}
-              onChange={(e) => setSubscriptionRate(Number(e.target.value))}
-              className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
-            >
-              {rateOptions.map(rate => (
-                <option key={rate} value={rate}>
-                  {rate === 0 ? 'Unlimited' : `${rate} Hz`}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        ...
       </div>
+      */}
 
+      {/*
+      Map Topics is hidden for now.
       <div className="pt-4 border-t">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">Map Topics</h3>
-        <div className="space-y-1 text-xs text-gray-400">
-          <div className="flex justify-between">
-            <span>Occupancy:</span>
-            <span className="font-mono">/map</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Laser:</span>
-            <span className="font-mono">/scan</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Global Plan:</span>
-            <span className="font-mono">/plan</span>
-          </div>
-        </div>
+        ...
       </div>
+      */}
     </div>
   );
 }

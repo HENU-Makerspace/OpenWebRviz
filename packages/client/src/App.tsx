@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { ConnectionStatus } from './components/ConnectionStatus';
-import { MediaPanel } from './components/MediaPanel';
 import { MediaViewport } from './components/MediaViewport';
 import { MapCanvas } from './components/MapCanvas';
 import { ImageOverlay } from './components/ImageOverlay';
@@ -10,7 +9,7 @@ import { useRosConnection } from './hooks/useRosConnection';
 import { useRobotMedia } from './hooks/useRobotMedia';
 import { useKeyboardTeleop } from './hooks/useKeyboardTeleop';
 import { ModeProvider, useMode } from './hooks/useMode';
-import { useSlamControl, useMapManager, useNetworkInfo } from './hooks/useSlamControl';
+import { useSlamControl, useMapManager } from './hooks/useSlamControl';
 import { useFaceRecognition } from './hooks/useFaceRecognition';
 import { useSystemManager } from './hooks/useSystemManager';
 import type { ConnectionState } from './hooks/useRosConnection';
@@ -386,22 +385,23 @@ function NavigationPanel({
   );
 }
 
-function NetworkPanel() {
-  const networkInfo = useNetworkInfo();
-
-  if (!networkInfo) return null;
-
-  return (
-    <div className="pt-4 border-t text-xs text-gray-500">
-      <div className="font-medium mb-1">Network:</div>
-      {networkInfo.ips.map((ip) => (
-        <div key={ip} className="font-mono">
-          {ip}:{networkInfo.port}
-        </div>
-      ))}
-    </div>
-  );
-}
+// NetworkPanel is intentionally hidden for the simplified operator UI.
+// function NetworkPanel() {
+//   const networkInfo = useNetworkInfo();
+//
+//   if (!networkInfo) return null;
+//
+//   return (
+//     <div className="pt-4 border-t text-xs text-gray-500">
+//       <div className="font-medium mb-1">Network:</div>
+//       {networkInfo.ips.map((ip) => (
+//         <div key={ip} className="font-mono">
+//           {ip}:{networkInfo.port}
+//         </div>
+//       ))}
+//     </div>
+//   );
+// }
 
 function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
@@ -506,9 +506,8 @@ function AppContent() {
               isConnected={isConnected}
             />
           )}
-          {config?.media && <MediaPanel media={media} />}
-          <LayerControl />
-          <NetworkPanel />
+          {/* Media controls moved to the bottom-left camera viewport. */}
+          {/* NetworkPanel is hidden for the simplified operator UI. */}
         </aside>
 
         <main className="flex-1 relative">
@@ -522,12 +521,39 @@ function AppContent() {
           />
           <MediaViewport
             videoRef={media.videoRef}
+            audioRef={media.audioRef}
             videoConnected={media.videoConnected}
             audioMonitoring={media.audioConnected}
             talkbackActive={media.talkbackActive}
+            loadingAction={media.loadingAction}
+            error={media.error}
             faceSnapshot={face.snapshot}
-            onCloseVideo={media.stopVideo}
+            onRefresh={() => void media.refreshStatus()}
+            onToggleVideo={() => {
+              if (media.videoConnected) {
+                void media.stopVideo();
+                return;
+              }
+              void media.startVideo();
+            }}
+            onToggleAudio={() => {
+              if (media.audioConnected) {
+                media.stopAudioMonitor();
+                return;
+              }
+              void media.startAudioMonitor();
+            }}
+            onToggleTalkback={() => {
+              if (media.talkbackActive) {
+                void media.stopTalkback();
+                return;
+              }
+              void media.startTalkback();
+            }}
           />
+          <div className="absolute bottom-4 right-4 z-20 w-64 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
+            <LayerControl />
+          </div>
           <ImageOverlay ros={ros} hidden={media.videoConnected} />
         </main>
       </div>
