@@ -370,6 +370,9 @@ app.get('/api/config', (c) => {
       healthUrl: '/api/face/health',
       pollIntervalMs: Number(FACE_POLL_INTERVAL_MS) || 500,
     },
+    topics: {
+      cmdVelTopic: config?.topics?.cmd_vel || '/cmd_vel',
+    },
   });
 });
 

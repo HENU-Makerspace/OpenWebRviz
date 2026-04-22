@@ -37,6 +37,9 @@ interface ServerConfig {
     healthUrl: string;
     pollIntervalMs: number;
   };
+  topics?: {
+    cmdVelTopic?: string;
+  };
 }
 
 function useServerConfig() {
@@ -430,7 +433,8 @@ function AppContent() {
   useKeyboardTeleop(ros, {
     linearSpeed: 0.5,
     angularSpeed: 1.0,
-    cmdVelTopic: '/cmd_vel',
+    cmdVelTopic: config?.topics?.cmdVelTopic || '/cmd_vel',
+    publishRateHz: 15,
   }, isConnected && mode === 'teleop');
 
   // Handle save map - save on robot (Jetson will upload to server automatically)

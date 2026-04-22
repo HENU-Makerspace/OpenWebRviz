@@ -5,16 +5,40 @@ interface TeleopSettings {
   linearSpeed: number;
   angularSpeed: number;
   cmdVelTopic: string;
+  publishRateHz?: number;
 }
 
 export function useKeyboardTeleop(
   ros: ROSLIB.Ros | null,
-  settings: TeleopSettings = { linearSpeed: 0.5, angularSpeed: 1.0, cmdVelTopic: '/cmd_vel' },
+  settings: TeleopSettings = { linearSpeed: 0.5, angularSpeed: 1.0, cmdVelTopic: '/cmd_vel', publishRateHz: 15 },
   enabled: boolean = true
 ) {
   const cmdVelPubRef = useRef<any>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
-  const animationFrameRef = useRef<number | null>(null);
+  const publishTimerRef = useRef<number | null>(null);
+  const lastPublishedRef = useRef<{ linear: number; angular: number } | null>(null);
+
+  const sendCommand = useCallback((linear: number, angular: number) => {
+    if (!cmdVelPubRef.current || !enabled) return;
+
+    const lastPublished = lastPublishedRef.current;
+    if (lastPublished && lastPublished.linear === linear && lastPublished.angular === angular) {
+      return;
+    }
+
+    const msg = {
+      linear: { x: linear, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: angular },
+    };
+
+    cmdVelPubRef.current.publish(msg);
+    lastPublishedRef.current = { linear, angular };
+    console.log('[useKeyboardTeleop] Published /cmd_vel:', { linear, angular });
+  }, [enabled]);
+
+  const sendStop = useCallback(() => {
+    sendCommand(0, 0);
+  }, [sendCommand]);
 
   // Initialize publisher
   useEffect(() => {
@@ -24,17 +48,20 @@ export function useKeyboardTeleop(
       ros,
       name: settings.cmdVelTopic,
       messageType: 'geometry_msgs/msg/Twist',
+      queue_size: 1,
     });
 
     console.log('[useKeyboardTeleop] Publisher initialized for', settings.cmdVelTopic);
 
     return () => {
+      sendStop();
       if (cmdVelPubRef.current) {
         cmdVelPubRef.current.unadvertise();
         cmdVelPubRef.current = null;
       }
+      lastPublishedRef.current = null;
     };
-  }, [ros, settings.cmdVelTopic, enabled]);
+  }, [ros, settings.cmdVelTopic, enabled, sendStop]);
 
   // Publish velocity command
   const publishCmdVel = useCallback(() => {
@@ -60,39 +87,24 @@ export function useKeyboardTeleop(
       angular = -settings.angularSpeed;
     }
 
-    // Only publish if there's movement
-    if (linear !== 0 || angular !== 0) {
-      const now = Date.now();
-      const msg = {
-        header: {
-          stamp: { sec: Math.floor(now / 1000), nanosec: (now % 1000) * 1000000 },
-          frame_id: 'base_link',
-        },
-        twist: {
-          linear: { x: linear, y: 0, z: 0 },
-          angular: { x: 0, y: 0, z: angular },
-        },
-      };
-      console.log('[useKeyboardTeleop] Publishing:', linear, angular);
-      cmdVelPubRef.current.publish(msg);
-    }
-  }, [settings.linearSpeed, settings.angularSpeed, enabled]);
+    sendCommand(linear, angular);
+  }, [settings.linearSpeed, settings.angularSpeed, enabled, sendCommand]);
 
-  // Animation loop for continuous publishing
+  // Fixed-rate publishing is much gentler on rosbridge than requestAnimationFrame.
   const startPublishing = useCallback(() => {
-    if (animationFrameRef.current) return;
+    if (publishTimerRef.current) return;
 
-    const loop = () => {
+    publishCmdVel();
+    const intervalMs = Math.max(50, Math.round(1000 / (settings.publishRateHz || 15)));
+    publishTimerRef.current = window.setInterval(() => {
       publishCmdVel();
-      animationFrameRef.current = requestAnimationFrame(loop);
-    };
-    loop();
-  }, [publishCmdVel]);
+    }, intervalMs);
+  }, [publishCmdVel, settings.publishRateHz]);
 
   const stopPublishing = useCallback(() => {
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
+    if (publishTimerRef.current) {
+      window.clearInterval(publishTimerRef.current);
+      publishTimerRef.current = null;
     }
   }, []);
 
@@ -102,61 +114,64 @@ export function useKeyboardTeleop(
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if typing in an input
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        (e.target instanceof HTMLElement && e.target.isContentEditable)
+      ) {
         return;
       }
 
+      if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        return;
+      }
+
+      e.preventDefault();
       pressedKeysRef.current.add(e.code);
       startPublishing();
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+        return;
+      }
+
+      e.preventDefault();
       pressedKeysRef.current.delete(e.code);
 
       if (pressedKeysRef.current.size === 0) {
         stopPublishing();
-        // Send stop command
-        if (cmdVelPubRef.current) {
-          const now = Date.now();
-          const msg = {
-            header: {
-              stamp: { sec: Math.floor(now / 1000), nanosec: (now % 1000) * 1000000 },
-              frame_id: '',
-            },
-            twist: {
-              linear: { x: 0, y: 0, z: 0 },
-              angular: { x: 0, y: 0, z: 0 },
-            },
-          };
-          cmdVelPubRef.current.publish(msg);
-        }
+        sendStop();
+      }
+    };
+
+    const handleWindowBlur = () => {
+      pressedKeysRef.current.clear();
+      stopPublishing();
+      sendStop();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        handleWindowBlur();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      pressedKeysRef.current.clear();
       stopPublishing();
-      // Send stop command on cleanup
-      if (cmdVelPubRef.current) {
-        const now = Date.now();
-        const msg = {
-          header: {
-            stamp: { sec: Math.floor(now / 1000), nanosec: (now % 1000) * 1000000 },
-            frame_id: '',
-          },
-          twist: {
-            linear: { x: 0, y: 0, z: 0 },
-            angular: { x: 0, y: 0, z: 0 },
-          },
-        };
-        cmdVelPubRef.current.publish(msg);
-      }
+      sendStop();
     };
-  }, [enabled, startPublishing, stopPublishing]);
+  }, [enabled, sendStop, startPublishing, stopPublishing]);
 
   return {
     isActive: enabled,
