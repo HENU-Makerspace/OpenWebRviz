@@ -4,57 +4,14 @@ import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
 import * as path from 'path';
+import { loadRobotConfig } from './config';
 
 const execAsync = promisify(exec);
 const app = new Hono();
 
 const MAPS_DIR = path.join(process.cwd(), 'maps');
 
-// Config file path
-const CONFIG_PATH = path.join(process.cwd(), 'config', 'robot_config.yaml');
-
-// Simple YAML config parser
-function parseYamlConfig(filePath: string) {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    const config: Record<string, any> = {};
-
-    // Simple line-by-line parsing for flat YAML structure
-    const lines = content.split('\n');
-    let currentSection = '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-
-      // Skip empty lines and comments
-      if (!trimmed || trimmed.startsWith('#')) continue;
-
-      // Section header (no colon or colon at end)
-      if (trimmed.endsWith(':') && !trimmed.includes('"') && !trimmed.includes("'")) {
-        currentSection = trimmed.replace(':', '').trim();
-        config[currentSection] = {};
-        continue;
-      }
-
-      // Key-value pair
-      const match = trimmed.match(/^(\w+):\s*(.+)$/);
-      if (match && currentSection) {
-        let value = match[2].trim().replace(/^["']|["']$/g, '');
-        // Try to parse as number (skip if contains dot, e.g. IP addresses)
-        const num = parseFloat(value);
-        config[currentSection][match[1]] = (isNaN(num) || value.includes('.')) ? value : num;
-      }
-    }
-
-    return config;
-  } catch (e) {
-    console.error('Failed to parse config:', e);
-    return null;
-  }
-}
-
-// Load config
-const config = parseYamlConfig(CONFIG_PATH);
+const { config, configPath, profile: configProfile } = loadRobotConfig(path.join(process.cwd(), 'config'));
 
 // Server configuration
 const SERVER_HOST = config?.server?.host || process.env.SERVER_HOST || '192.168.1.100';
@@ -91,6 +48,8 @@ const FACE_HEALTH_PATH = config?.face?.health_path || '/health';
 const FACE_POLL_INTERVAL_MS = config?.face?.poll_interval_ms || 500;
 
 console.log('[Config] Loaded config:', {
+  configProfile,
+  configPath,
   SERVER_HOST,
   JETSON_HOST,
   JETSON_ROSBRIDGE_PORT,

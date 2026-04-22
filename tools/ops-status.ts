@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { loadRobotConfig } from '../packages/server/src/config';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,35 +29,7 @@ interface MediaStatus {
   } | null;
 }
 
-function parseYamlConfig(filePath: string) {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const config: Record<string, any> = {};
-  const lines = content.split('\n');
-  let currentSection = '';
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    if (trimmed.endsWith(':') && !trimmed.includes('"') && !trimmed.includes("'")) {
-      currentSection = trimmed.replace(':', '').trim();
-      config[currentSection] = {};
-      continue;
-    }
-
-    const match = trimmed.match(/^(\w+):\s*(.+)$/);
-    if (match && currentSection) {
-      const key = match[1];
-      const raw = match[2].trim().replace(/^["']|["']$/g, '');
-      const num = Number(raw);
-      config[currentSection][key] = Number.isNaN(num) || raw.includes('.') ? raw : num;
-    }
-  }
-
-  return config;
-}
-
-const config = parseYamlConfig(path.join(process.cwd(), 'packages', 'server', 'config', 'robot_config.yaml'));
+const { config, profile: configProfile, configPath } = loadRobotConfig(`${process.cwd()}/packages/server/config`);
 const CLOUD_HOST = String(config.server?.host || '182.43.86.126');
 const JETSON_HOST = String(config.jetson?.host || '192.168.43.100');
 
@@ -102,6 +73,17 @@ async function runSSH(target: string, script: string) {
   return runCommand('ssh', [target, script], 12000);
 }
 
+function isLocalHost(host: string) {
+  return host === '127.0.0.1' || host === 'localhost';
+}
+
+async function runRemoteShell(host: string, userAtHost: string, script: string) {
+  if (isLocalHost(host)) {
+    return runCommand('bash', ['-lc', script], 12000);
+  }
+  return runSSH(userAtHost, script);
+}
+
 function parseKeyValue(text: string): FlatMap {
   const map: FlatMap = {};
   for (const line of text.split('\n')) {
@@ -137,7 +119,7 @@ function fmtAge(updatedAt?: string | null) {
 }
 
 async function probeCloud() {
-  const remote = await runSSH(`root@${CLOUD_HOST}`, `
+  const remote = await runRemoteShell(CLOUD_HOST, `root@${CLOUD_HOST}`, `
 printf 'webbot_server=%s\n' "$(systemctl is-active webbot-server 2>/dev/null || true)"
 printf 'nginx=%s\n' "$(systemctl is-active nginx 2>/dev/null || true)"
 printf 'port_4001=%s\n' "$(ss -ltnp | grep -q ':4001 ' && echo yes || echo no)"
@@ -157,7 +139,7 @@ printf 'port_19110=%s\n' "$(ss -ltnp | grep -q ':19110 ' && echo yes || echo no)
 }
 
 async function probeJetson() {
-  const remote = await runSSH(`nvidia@${JETSON_HOST}`, `
+  const remote = await runRemoteShell(JETSON_HOST, `nvidia@${JETSON_HOST}`, `
 printf 'media=%s\n' "$(systemctl --user is-active webbot-media.service 2>/dev/null || true)"
 printf 'video=%s\n' "$(systemctl --user is-active webbot-video.service 2>/dev/null || true)"
 printf 'control=%s\n' "$(systemctl --user is-active webbot-media-control.service 2>/dev/null || true)"
@@ -207,6 +189,7 @@ function render(cloud: Awaited<ReturnType<typeof probeCloud>>, jetson: Awaited<R
 
   const output = [
     `${color('OpenWebRviz Ops Status', 1)}  ${new Date().toLocaleString('zh-CN', { hour12: false })}`,
+    `Profile: ${configProfile}${configPath ? `   Config: ${configPath}` : ''}`,
     `Cloud: ${CLOUD_HOST}   Jetson: ${JETSON_HOST}`,
     '',
     section('Cloud', [

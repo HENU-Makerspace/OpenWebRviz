@@ -1,8 +1,8 @@
-# 兼容旧路径：默认按本地联调配置读取。
-# 新增了两套显式配置：
-# - robot_config.local.yaml
-# - robot_config.cloud.yaml
-# 建议后续通过 ROBOT_CONFIG_PROFILE=local|cloud 来选择。
+# 本地联调用配置
+# 场景：
+# - 前后端跑在你的开发机
+# - Jetson 通过局域网直连
+# - 浏览器直接连 Jetson 的 rosbridge
 
 server:
   host: "127.0.0.1"

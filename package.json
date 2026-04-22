@@ -6,13 +6,19 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "concurrently \"bun run dev:server\" \"bun run dev:client\"",
-    "dev:server": "bun run --filter server dev",
+    "dev": "bun run dev:local",
+    "dev:local": "ROBOT_CONFIG_PROFILE=local concurrently \"bun run dev:server:local\" \"bun run dev:client\"",
+    "dev:cloud": "ROBOT_CONFIG_PROFILE=cloud concurrently \"bun run dev:server:cloud\" \"bun run dev:client\"",
+    "dev:server": "bun run dev:server:local",
+    "dev:server:local": "ROBOT_CONFIG_PROFILE=local bun run --filter server dev",
+    "dev:server:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run --filter server dev",
     "dev:client": "bun run --filter client dev",
     "build": "bun run build:server && bun run build:client",
     "build:server": "bun run --filter server build",
     "build:client": "bun run --filter client build",
-    "ops:status": "bun run tools/ops-status.ts",
+    "ops:status": "bun run ops:status:local",
+    "ops:status:local": "ROBOT_CONFIG_PROFILE=local bun run tools/ops-status.ts",
+    "ops:status:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run tools/ops-status.ts",
     "db:generate": "bun run --filter server db:generate",
     "db:push": "bun run --filter server db:push"
   },

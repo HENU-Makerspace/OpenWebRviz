@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts",
+    "dev": "bun run dev:local",
+    "dev:local": "ROBOT_CONFIG_PROFILE=local bun run --watch src/index.ts",
+    "dev:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run --watch src/index.ts",
+    "start": "bun run start:local",
+    "start:local": "ROBOT_CONFIG_PROFILE=local bun run src/index.ts",
+    "start:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run src/index.ts",
     "build": "tsc",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
