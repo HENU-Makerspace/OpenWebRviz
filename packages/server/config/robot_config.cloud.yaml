@@ -19,8 +19,8 @@ rosbridge:
   address: "0.0.0.0"
 
 frontend:
-  api_url: "http://182.43.86.126:4001"
-  ws_url: "ws://182.43.86.126/rosbridge/"
+  api_url: "https://qiuhua.ying-guang.com"
+  ws_url: "wss://qiuhua.ying-guang.com/rosbridge/"
 
 reverse_tunnel:
   rosbridge_port: 19090

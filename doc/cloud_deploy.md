@@ -3,13 +3,14 @@
 当前部署目标：
 
 - 云服务器公网 IP：`182.43.86.126`
+- 云服务器域名：`qiuhua.ying-guang.com`
 - Jetson 局域网 IP：`192.168.43.100`
 
 当前仓库已经按这套链路调整过本地配置：
 
-- 浏览器访问云服务器 `http://182.43.86.126`
+- 浏览器访问云服务器 `https://qiuhua.ying-guang.com`
 - 前端 API 走云服务器 `/api`
-- 前端 ROS WebSocket 走云服务器 `ws://182.43.86.126/rosbridge/`
+- 前端 ROS WebSocket 走云服务器 `wss://qiuhua.ying-guang.com/rosbridge/`
 - Jetson 主动通过反向 SSH 把 `rosbridge`、`Janus HTTP`、`janus-demo`、`face service` 暴露到云服务器本机回环端口
 - Janus 仍部署在 Jetson 本机，不部署在云服务器
 
@@ -18,7 +19,8 @@
 - [robot_config.yaml](/home/c6h4o2/dev/web/ROS/packages/server/config/robot_config.yaml)
   - `server.host` 改为 `182.43.86.126`
   - `jetson.host` 改为 `192.168.43.100`
-  - `frontend.ws_url` 改为 `ws://182.43.86.126/rosbridge/`
+  - `frontend.api_url` 改为 `https://qiuhua.ying-guang.com`
+  - `frontend.ws_url` 改为 `wss://qiuhua.ying-guang.com/rosbridge/`
   - `media.janus_host` 改为 `127.0.0.1`
   - 新增 `reverse_tunnel` 配置
   - 新增 `face` 配置
@@ -111,7 +113,18 @@ sudo systemctl status webbot-server
 
 启动 Bun 后端。
 
-### 4. 配置 Nginx
+### 4. 配置证书与 Nginx
+
+先准备证书目录：
+
+```bash
+sudo mkdir -p /etc/nginx/ssl
+sudo cp qiuhua.ying-guang.com_nginx/qiuhua.ying-guang.com_bundle.pem /etc/nginx/ssl/
+sudo cp qiuhua.ying-guang.com_nginx/qiuhua.ying-guang.com.key /etc/nginx/ssl/
+sudo chmod 600 /etc/nginx/ssl/qiuhua.ying-guang.com.key
+```
+
+再安装 Nginx 配置：
 
 ```bash
 sudo cp deploy/nginx/webbot.conf /etc/nginx/conf.d/
@@ -121,6 +134,8 @@ sudo systemctl reload nginx
 
 这份配置会做三件事：
 
+- `80` 端口全部跳转到 `https://qiuhua.ying-guang.com`
+- `443` 使用域名证书提供 HTTPS / WSS
 - 直接托管 `/usr/share/nginx/html/webbot` 下的前端静态文件
 - 把 `/api/` 转发到本机 `127.0.0.1:4001`
 - 把 `/rosbridge/` 转发到本机 `127.0.0.1:19090`
@@ -233,7 +248,7 @@ python3 -m venv --system-site-packages ~/face/.venv
 3. 云服务器执行 `curl http://127.0.0.1:18088/janus`
 4. 云服务器执行 `curl http://127.0.0.1:18000`
 5. 云服务器执行 `curl http://127.0.0.1:19100/health`
-5. 浏览器打开 `http://182.43.86.126`
+5. 浏览器打开 `https://qiuhua.ying-guang.com`
 6. 浏览器确认 `/api/config` 返回 `rosbridgeUrl` 和 Janus 代理地址
 7. 页面确认 ROS 连接成功
 8. 页面确认视频流和人脸框 overlay 正常
@@ -241,12 +256,8 @@ python3 -m venv --system-site-packages ~/face/.venv
 
 ## 还没做的事
 
-- 还没有配置 HTTPS/WSS
 - Janus 媒体面如果要给公网浏览器用，还需要确认 Jetson 的 ICE/STUN/TURN 配置
 
 如果下一步要上正式公网，建议继续做：
 
-1. 域名
-2. HTTPS
-3. `wss://` rosbridge
-4. Janus 的 ICE/STUN/TURN 配置检查
+1. Janus 的 ICE/STUN/TURN 配置检查

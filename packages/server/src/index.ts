@@ -306,18 +306,24 @@ app.get('/api/health', (c) => {
 
 // Get config for Jetson and frontend
 app.get('/api/config', (c) => {
+  const requestUrl = new URL(c.req.url);
+  const forwardedProto = c.req.header('x-forwarded-proto') || requestUrl.protocol.replace(':', '');
+  const forwardedHost = c.req.header('x-forwarded-host') || c.req.header('host') || requestUrl.host;
+  const publicOrigin = config?.frontend?.api_url || `${forwardedProto}://${forwardedHost}`;
+  const publicWsOrigin = FRONTEND_WS_URL || `${forwardedProto === 'https' ? 'wss' : 'ws'}://${forwardedHost}/rosbridge/`;
+
   return c.json({
-    serverUrl: `http://${SERVER_HOST}:${SERVER_PORT}`,
+    serverUrl: publicOrigin,
     jetsonHost: JETSON_HOST,
     jetsonRosbridgePort: JETSON_ROSBRIDGE_PORT,
-    rosbridgeUrl: FRONTEND_WS_URL || `ws://${JETSON_HOST}:${JETSON_ROSBRIDGE_PORT}`,
+    rosbridgeUrl: publicWsOrigin,
     media: {
-      janusBaseUrl: `http://${SERVER_HOST}/api/media/janus`,
-      janusApiUrl: `http://${SERVER_HOST}/api/media/janus`,
-      janusDemoBaseUrl: `http://${SERVER_HOST}/janus-demo`,
+      janusBaseUrl: `${publicOrigin}/api/media/janus`,
+      janusApiUrl: `${publicOrigin}/api/media/janus`,
+      janusDemoBaseUrl: `${publicOrigin}/janus-demo`,
       janusScriptUrl: `/api/media/assets/${JANUS_SCRIPT_ASSET}`,
-      streamingUrl: `http://${SERVER_HOST}/janus-demo${JANUS_STREAMING_PATH}`,
-      audioBridgeUrl: `http://${SERVER_HOST}/janus-demo${JANUS_AUDIOBRIDGE_PATH}`,
+      streamingUrl: `${publicOrigin}/janus-demo${JANUS_STREAMING_PATH}`,
+      audioBridgeUrl: `${publicOrigin}/janus-demo${JANUS_AUDIOBRIDGE_PATH}`,
       preferredVideoStreamId: Number(MEDIA_VIDEO_STREAM_ID) || 0,
       preferredAudioStreamId: Number(MEDIA_AUDIO_STREAM_ID) || 0,
       audioBridgeRoom: Number(MEDIA_AUDIO_BRIDGE_ROOM),

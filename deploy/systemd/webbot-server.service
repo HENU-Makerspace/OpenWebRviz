@@ -8,8 +8,9 @@ Type=simple
 User=root
 WorkingDirectory=/opt/webbot/packages/server
 Environment=NODE_ENV=production
+Environment=ROBOT_CONFIG_PROFILE=cloud
 Environment=PATH=/root/.bun/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/env bun run start
+ExecStart=/usr/bin/env bun run start:cloud
 Restart=always
 RestartSec=3
 
