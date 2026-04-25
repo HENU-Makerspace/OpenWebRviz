@@ -96,11 +96,11 @@ function parseJsonPayload<T>(payload: string, response: Response): T {
 async function forwardJanusRequest<T = any>(plugin: string, body: Record<string, unknown>) {
   const baseUrl = `http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}`;
 
-  const createRes = await fetch(baseUrl, {
+  const createRes = await fetchWithTimeout(baseUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ janus: 'create', transaction: randomTransaction() }),
-  });
+  }, 5000);
   const createText = await createRes.text();
   const createJson = createText ? JSON.parse(createText) : null;
   const sessionId = createJson?.data?.id;
@@ -112,7 +112,7 @@ async function forwardJanusRequest<T = any>(plugin: string, body: Record<string,
   let handleId: number | null = null;
 
   try {
-    const attachRes = await fetch(`${baseUrl}/${sessionId}`, {
+    const attachRes = await fetchWithTimeout(`${baseUrl}/${sessionId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -120,7 +120,7 @@ async function forwardJanusRequest<T = any>(plugin: string, body: Record<string,
         plugin,
         transaction: randomTransaction(),
       }),
-    });
+    }, 5000);
     const attachText = await attachRes.text();
     const attachJson = attachText ? JSON.parse(attachText) : null;
     handleId = attachJson?.data?.id ?? null;
@@ -129,7 +129,7 @@ async function forwardJanusRequest<T = any>(plugin: string, body: Record<string,
       throw new Error(`Failed to attach Janus plugin: ${attachText || `HTTP ${attachRes.status}`}`);
     }
 
-    const messageRes = await fetch(`${baseUrl}/${sessionId}/${handleId}`, {
+    const messageRes = await fetchWithTimeout(`${baseUrl}/${sessionId}/${handleId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -137,7 +137,7 @@ async function forwardJanusRequest<T = any>(plugin: string, body: Record<string,
         body,
         transaction: randomTransaction(),
       }),
-    });
+    }, 5000);
     const messageText = await messageRes.text();
     const messageJson = messageText ? JSON.parse(messageText) : null;
 
@@ -148,18 +148,18 @@ async function forwardJanusRequest<T = any>(plugin: string, body: Record<string,
     return (messageJson?.plugindata?.data || messageJson?.data || messageJson) as T;
   } finally {
     if (handleId) {
-      await fetch(`${baseUrl}/${sessionId}/${handleId}`, {
+      await fetchWithTimeout(`${baseUrl}/${sessionId}/${handleId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ janus: 'detach', transaction: randomTransaction() }),
-      }).catch(() => undefined);
+      }, 3000).catch(() => undefined);
     }
 
-    await fetch(`${baseUrl}/${sessionId}`, {
+    await fetchWithTimeout(`${baseUrl}/${sessionId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ janus: 'destroy', transaction: randomTransaction() }),
-    }).catch(() => undefined);
+    }, 3000).catch(() => undefined);
   }
 }
 
@@ -167,11 +167,11 @@ async function isJanusAvailable() {
   const baseUrl = `http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}`;
 
   try {
-    const createRes = await fetch(baseUrl, {
+    const createRes = await fetchWithTimeout(baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ janus: 'create', transaction: randomTransaction() }),
-    });
+    }, 4000);
     const createText = await createRes.text();
     const createJson = createText ? JSON.parse(createText) : null;
     const sessionId = createJson?.data?.id;
@@ -180,11 +180,11 @@ async function isJanusAvailable() {
       return false;
     }
 
-    await fetch(`${baseUrl}/${sessionId}`, {
+    await fetchWithTimeout(`${baseUrl}/${sessionId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ janus: 'destroy', transaction: randomTransaction() }),
-    }).catch(() => undefined);
+    }, 3000).catch(() => undefined);
 
     return true;
   } catch {
