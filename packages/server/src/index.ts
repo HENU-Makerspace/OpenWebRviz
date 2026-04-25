@@ -261,32 +261,50 @@ async function requestRemoteJson<T = any>(targetUrl: string, init?: RequestInit)
   };
 }
 
-async function proxyJanus(c: any) {
-  const requestUrl = new URL(c.req.url);
-  const suffix = c.req.path.replace('/api/media/janus', '');
-  const targetUrl = new URL(`http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}${suffix}`);
-  targetUrl.search = requestUrl.search;
-
-  const body = ['GET', 'HEAD'].includes(c.req.method) ? undefined : await c.req.arrayBuffer();
-  const response = await fetch(targetUrl.toString(), {
-    method: c.req.method,
-    headers: {
-      'Content-Type': c.req.header('content-type') || 'application/json',
-    },
-    body,
-  });
-
-  const headers = new Headers();
-  const contentType = response.headers.get('content-type');
-
-  if (contentType) {
-    headers.set('Content-Type', contentType);
+function errorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
   }
+  return String(error);
+}
 
-  return new Response(response.body, {
-    status: response.status,
-    headers,
-  });
+function jsonErrorResponse(c: any, error: unknown, fallbackError: string, status = 502) {
+  return c.json({
+    error: fallbackError,
+    details: errorMessage(error),
+  }, status);
+}
+
+async function proxyJanus(c: any) {
+  try {
+    const requestUrl = new URL(c.req.url);
+    const suffix = c.req.path.replace('/api/media/janus', '');
+    const targetUrl = new URL(`http://${JANUS_HOST}:${JANUS_HTTP_PORT}${JANUS_API_PATH}${suffix}`);
+    targetUrl.search = requestUrl.search;
+
+    const body = ['GET', 'HEAD'].includes(c.req.method) ? undefined : await c.req.arrayBuffer();
+    const response = await fetchWithTimeout(targetUrl.toString(), {
+      method: c.req.method,
+      headers: {
+        'Content-Type': c.req.header('content-type') || 'application/json',
+      },
+      body,
+    }, 15000);
+
+    const headers = new Headers();
+    const contentType = response.headers.get('content-type');
+
+    if (contentType) {
+      headers.set('Content-Type', contentType);
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      headers,
+    });
+  } catch (error) {
+    return jsonErrorResponse(c, error, 'Failed to reach Janus upstream');
+  }
 }
 
 // Ensure maps directory exists
@@ -365,7 +383,11 @@ app.get('/api/media/assets/*', async (c) => {
     return c.text('adapter asset is now loaded from the frontend bundle', 404);
   }
 
-  return proxyRemoteGet(`http://${JANUS_HOST}:${JANUS_DEMO_PORT}${remoteAssetBasePath}/${safeAssetPath}`);
+  try {
+    return await proxyRemoteGet(`http://${JANUS_HOST}:${JANUS_DEMO_PORT}${remoteAssetBasePath}/${safeAssetPath}`);
+  } catch (error) {
+    return jsonErrorResponse(c, error, 'Failed to fetch Janus asset', 404);
+  }
 });
 
 app.all('/api/media/janus', proxyJanus);
@@ -421,7 +443,7 @@ app.get('/api/media/status', async (c) => {
       video,
     });
   } catch (error) {
-    return c.json({ error: 'Failed to get media status', details: String(error) }, 500);
+    return jsonErrorResponse(c, error, 'Failed to get media status');
   }
 });
 
@@ -434,7 +456,7 @@ app.get('/api/media/video/status', async (c) => {
       'Content-Type': response.contentType,
     });
   } catch (error) {
-    return c.json({ error: 'Failed to get video status', details: String(error) }, 500);
+    return jsonErrorResponse(c, error, 'Failed to get video status');
   }
 });
 
@@ -448,7 +470,7 @@ app.post('/api/media/video/start', async (c) => {
       'Content-Type': response.contentType,
     });
   } catch (error) {
-    return c.json({ error: 'Failed to start video pipeline', details: String(error) }, 500);
+    return jsonErrorResponse(c, error, 'Failed to start video pipeline');
   }
 });
 
@@ -462,7 +484,7 @@ app.post('/api/media/video/stop', async (c) => {
       'Content-Type': response.contentType,
     });
   } catch (error) {
-    return c.json({ error: 'Failed to stop video pipeline', details: String(error) }, 500);
+    return jsonErrorResponse(c, error, 'Failed to stop video pipeline');
   }
 });
 
@@ -497,7 +519,7 @@ app.post('/api/media/talkback/forward/start', async (c) => {
       port: response.port,
     });
   } catch (error) {
-    return c.json({ error: 'Failed to start talkback forwarder', details: String(error) }, 500);
+    return jsonErrorResponse(c, error, 'Failed to start talkback forwarder');
   }
 });
 
@@ -519,7 +541,7 @@ app.post('/api/media/talkback/forward/stop', async (c) => {
       stopped: forwarders.map((forwarder) => forwarder.stream_id),
     });
   } catch (error) {
-    return c.json({ error: 'Failed to stop talkback forwarder', details: String(error) }, 500);
+    return jsonErrorResponse(c, error, 'Failed to stop talkback forwarder');
   }
 });
 
