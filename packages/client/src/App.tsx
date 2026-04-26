@@ -11,8 +11,10 @@ import { useKeyboardTeleop } from './hooks/useKeyboardTeleop';
 import { ModeProvider, useMode } from './hooks/useMode';
 import { useSlamControl, useMapManager } from './hooks/useSlamControl';
 import { useFaceRecognition } from './hooks/useFaceRecognition';
+import { useNavigationTasks } from './hooks/useNavigationTasks';
 import { useSystemManager } from './hooks/useSystemManager';
 import type { ConnectionState } from './hooks/useRosConnection';
+import type { NavigationPose, NavigationTaskMode, NavigationTaskStatus } from './hooks/useNavigationTasks';
 
 interface ServerConfig {
   serverUrl: string;
@@ -45,6 +47,13 @@ interface ServerConfig {
     standMode?: boolean;
     up?: number;
     publishRateHz?: number;
+  };
+  navigation?: {
+    navigateToPoseAction?: string;
+    navigateToPoseType?: string;
+    navigateThroughPosesAction?: string;
+    navigateThroughPosesType?: string;
+    frameId?: string;
   };
 }
 
@@ -197,11 +206,22 @@ function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) 
   );
 }
 
+type NavClickMode = 'none' | 'initial_pose' | 'goal' | 'waypoint';
+
 interface NavigationPanelProps {
-  navClickMode: 'none' | 'initial_pose' | 'goal';
-  setNavClickMode: (mode: 'none' | 'initial_pose' | 'goal') => void;
+  navClickMode: NavClickMode;
+  setNavClickMode: (mode: NavClickMode) => void;
   selectedMap: string | null;
   setSelectedMap: (map: string | null) => void;
+  taskMode: NavigationTaskMode;
+  setTaskMode: (mode: NavigationTaskMode) => void;
+  patrolPoints: NavigationPose[];
+  onRemovePatrolPoint: (id: string) => void;
+  onClearPatrolPoints: () => void;
+  onStartPatrolTask: () => Promise<void>;
+  onCancelTask: () => void;
+  taskStatus: NavigationTaskStatus;
+  taskRunning: boolean;
 }
 
 type Stance = 'stand' | 'crouch';
@@ -212,6 +232,15 @@ function NavigationPanel({
   setNavClickMode,
   selectedMap,
   setSelectedMap,
+  taskMode,
+  setTaskMode,
+  patrolPoints,
+  onRemovePatrolPoint,
+  onClearPatrolPoints,
+  onStartPatrolTask,
+  onCancelTask,
+  taskStatus,
+  taskRunning,
   ros,
   isConnected,
 }: NavigationPanelProps & { ros: any; isConnected: boolean }) {
@@ -243,6 +272,7 @@ function NavigationPanel({
   };
 
   const stopNavigation = async () => {
+    onCancelTask();
     await stopAll();
   };
 
@@ -358,6 +388,67 @@ function NavigationPanel({
         <div className="space-y-2">
           <div className="text-xs text-green-600">导航运行中</div>
 
+          <div className="space-y-1">
+            <div className="text-xs text-gray-500">任务模式</div>
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                onClick={() => {
+                  setTaskMode('single');
+                  setNavClickMode('none');
+                }}
+                className={`rounded px-2 py-1 text-xs ${
+                  taskMode === 'single'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                单点
+              </button>
+              <button
+                onClick={() => {
+                  setTaskMode('route');
+                  setNavClickMode('none');
+                }}
+                className={`rounded px-2 py-1 text-xs ${
+                  taskMode === 'route'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                途经多点
+              </button>
+              <button
+                onClick={() => {
+                  setTaskMode('loop');
+                  setNavClickMode('none');
+                }}
+                className={`rounded px-2 py-1 text-xs ${
+                  taskMode === 'loop'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                循环巡航
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded border bg-gray-50 p-2 text-xs text-gray-600">
+            <div>当前任务：{taskMode === 'single' ? '单点导航' : taskMode === 'route' ? '途经多点' : '循环巡航'}</div>
+            <div>执行状态：{
+              taskStatus.state === 'idle'
+                ? '空闲'
+                : taskStatus.state === 'running'
+                  ? `执行中（第 ${taskStatus.iteration} 轮）`
+                  : taskStatus.state === 'succeeded'
+                    ? '已完成'
+                    : taskStatus.state === 'canceled'
+                      ? '已取消'
+                      : '失败'
+            }</div>
+            {taskStatus.error && <div className="mt-1 text-red-500">{taskStatus.error}</div>}
+          </div>
+
           <div className="text-xs text-gray-500">点击模式</div>
           <div className="flex gap-1">
             <button
@@ -370,17 +461,93 @@ function NavigationPanel({
             >
               设置初始位姿
             </button>
-            <button
-              onClick={() => setNavClickMode(navClickMode === 'goal' ? 'none' : 'goal')}
-              className={`flex-1 text-xs py-1 px-2 rounded ${
-                navClickMode === 'goal'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              设置目标点
-            </button>
+            {taskMode === 'single' ? (
+              <button
+                onClick={() => setNavClickMode(navClickMode === 'goal' ? 'none' : 'goal')}
+                className={`flex-1 text-xs py-1 px-2 rounded ${
+                  navClickMode === 'goal'
+                    ? 'bg-green-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                设置目标点
+              </button>
+            ) : (
+              <button
+                onClick={() => setNavClickMode(navClickMode === 'waypoint' ? 'none' : 'waypoint')}
+                className={`flex-1 text-xs py-1 px-2 rounded ${
+                  navClickMode === 'waypoint'
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                添加途经点
+              </button>
+            )}
           </div>
+
+          {taskMode !== 'single' && (
+            <div className="space-y-2 rounded border border-slate-200 bg-slate-50 p-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-slate-600">点位列表</div>
+                <button
+                  onClick={onClearPatrolPoints}
+                  disabled={patrolPoints.length === 0}
+                  className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-40"
+                >
+                  清空
+                </button>
+              </div>
+              {patrolPoints.length === 0 ? (
+                <div className="text-xs text-slate-500">
+                  在地图上依次添加点位，系统会按添加顺序执行。
+                </div>
+              ) : (
+                <div className="max-h-40 space-y-1 overflow-y-auto">
+                  {patrolPoints.map((point, index) => (
+                    <div
+                      key={point.id}
+                      className="flex items-center justify-between rounded bg-white px-2 py-1 text-xs text-slate-700"
+                    >
+                      <div>
+                        <div>点 {index + 1}</div>
+                        <div className="text-slate-500">
+                          {point.x.toFixed(2)}, {point.y.toFixed(2)}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => onRemovePatrolPoint(point.id)}
+                        className="text-red-500 hover:text-red-600"
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => void onStartPatrolTask()}
+                disabled={patrolPoints.length < 2 || taskRunning}
+                className="w-full rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {taskRunning
+                  ? '任务执行中...'
+                  : taskMode === 'route'
+                    ? '开始途经多点'
+                    : '开始循环巡航'}
+              </button>
+            </div>
+          )}
+
+          {taskRunning && (
+            <button
+              onClick={onCancelTask}
+              className="w-full bg-amber-500 text-white text-xs py-1 px-2 rounded hover:bg-amber-600"
+            >
+              停止当前任务
+            </button>
+          )}
 
           <button
             onClick={stopNavigation}
@@ -429,12 +596,11 @@ function AppContent() {
   } = useRosConnection(wsUrl);
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();
-  const [navClickMode, setNavClickMode] = useState<'none' | 'initial_pose' | 'goal'>('none');
+  const [navClickMode, setNavClickMode] = useState<NavClickMode>('none');
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
-
-  // System manager for robot control
-  const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
-  const { maps, fetchMaps } = useMapManager();
+  const [navigationTaskMode, setNavigationTaskMode] = useState<NavigationTaskMode>('single');
+  const [patrolPoints, setPatrolPoints] = useState<NavigationPose[]>([]);
+  const navigationTasks = useNavigationTasks(ros, isConnected, config?.navigation || null);
 
   useKeyboardTeleop(ros, {
     linearSpeed: 0.5,
@@ -445,13 +611,40 @@ function AppContent() {
     publishRateHz: config?.teleop?.publishRateHz ?? 25,
   }, isConnected && mode === 'teleop');
 
-  // Handle save map - save on robot (Jetson will upload to server automatically)
-  const handleSaveMap = async () => {
-    if (!isConnected) return;
-    await saveMap();
-    // Wait for upload and refresh maps
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    fetchMaps();
+  const addPatrolPoint = (pose: NavigationPose) => {
+    setPatrolPoints((prev) => [...prev, pose]);
+    setNavClickMode('none');
+  };
+
+  const removePatrolPoint = (id: string) => {
+    setPatrolPoints((prev) => prev.filter((point) => point.id !== id));
+  };
+
+  const clearPatrolPoints = () => {
+    setPatrolPoints([]);
+    setNavClickMode('none');
+  };
+
+  const startPatrolTask = async () => {
+    try {
+      if (navigationTaskMode === 'route') {
+        await navigationTasks.startRoute(patrolPoints);
+        return;
+      }
+
+      await navigationTasks.startLoop(patrolPoints);
+    } catch (error) {
+      console.error('Failed to start patrol task:', error);
+    }
+  };
+
+  const handleSingleGoalSelected = async (pose: NavigationPose) => {
+    try {
+      setNavClickMode('none');
+      await navigationTasks.startSingleGoal(pose);
+    } catch (error) {
+      console.error('Failed to start single goal:', error);
+    }
   };
 
   return (
@@ -514,6 +707,15 @@ function AppContent() {
               setNavClickMode={setNavClickMode}
               selectedMap={selectedMap}
               setSelectedMap={setSelectedMap}
+              taskMode={navigationTaskMode}
+              setTaskMode={setNavigationTaskMode}
+              patrolPoints={patrolPoints}
+              onRemovePatrolPoint={removePatrolPoint}
+              onClearPatrolPoints={clearPatrolPoints}
+              onStartPatrolTask={startPatrolTask}
+              onCancelTask={navigationTasks.cancelCurrentTask}
+              taskStatus={navigationTasks.status}
+              taskRunning={navigationTasks.isRunning}
               ros={ros}
               isConnected={isConnected}
             />
@@ -564,6 +766,10 @@ function AppContent() {
             navClickMode={navClickMode}
             setNavClickMode={setNavClickMode}
             selectedMap={selectedMap}
+            navigationTaskMode={navigationTaskMode}
+            navigationPoints={patrolPoints}
+            onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)}
+            onWaypointAdded={addPatrolPoint}
           />
           <div className="absolute bottom-4 right-4 z-20 w-64 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
             <LayerControl />
@@ -580,7 +786,17 @@ function AppContent() {
 
       {isConnected && mode === 'navigation' && (
         <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-black/70 text-white px-4 py-2 rounded text-sm">
-          在地图上点击以设置导航目标
+          {navClickMode === 'initial_pose'
+            ? '在地图上拖拽以设置初始位姿'
+            : navClickMode === 'goal'
+              ? '在地图上拖拽以发送单点导航目标'
+              : navClickMode === 'waypoint'
+                ? '在地图上拖拽以添加途经点'
+                : navigationTaskMode === 'single'
+                  ? '单点导航：设置目标点后会立即下发'
+                  : navigationTaskMode === 'route'
+                    ? '途经多点：先添加点位，再开始任务'
+                    : '循环巡航：先添加点位，再开始循环'}
         </div>
       )}
     </div>

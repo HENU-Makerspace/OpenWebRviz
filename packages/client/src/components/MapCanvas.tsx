@@ -3,6 +3,7 @@ import * as ROSLIB from 'roslib';
 import { useRosMap, MapData } from '../hooks/useRosMap';
 import { useRosTfTree } from '../hooks/useRosTf';
 import { useRosPath, useGoalPublisher, useInitialPosePublisher } from '../hooks/useRosPath';
+import type { NavigationPose, NavigationTaskMode } from '../hooks/useNavigationTasks';
 import { useLayers } from './LayerControl';
 import { useMode } from '../hooks/useMode';
 import { useRosScan } from '../hooks/useRosScan';
@@ -11,9 +12,13 @@ interface MapCanvasProps {
   ros: ROSLIB.Ros | null;
   isConnected: boolean;
   mapTopic?: string;
-  navClickMode?: 'none' | 'initial_pose' | 'goal';
-  setNavClickMode?: (mode: 'none' | 'initial_pose' | 'goal') => void;
+  navClickMode?: 'none' | 'initial_pose' | 'goal' | 'waypoint';
+  setNavClickMode?: (mode: 'none' | 'initial_pose' | 'goal' | 'waypoint') => void;
   selectedMap?: string | null;
+  navigationTaskMode?: NavigationTaskMode;
+  navigationPoints?: NavigationPose[];
+  onGoalPoseSelected?: (pose: NavigationPose) => void;
+  onWaypointAdded?: (pose: NavigationPose) => void;
 }
 
 interface ViewState {
@@ -29,6 +34,10 @@ export function MapCanvas({
   navClickMode = 'none',
   setNavClickMode,
   selectedMap = null,
+  navigationTaskMode = 'single',
+  navigationPoints = [],
+  onGoalPoseSelected,
+  onWaypointAdded,
 }: MapCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,7 +48,7 @@ export function MapCanvas({
     startWorldY: number;
     currentWorldX: number;
     currentWorldY: number;
-    mode: 'initial_pose' | 'goal';
+    mode: 'initial_pose' | 'goal' | 'waypoint';
   } | null>(null);
 
   const { layers, subscriptionSettings } = useLayers();
@@ -134,6 +143,17 @@ export function MapCanvas({
     },
     []
   );
+
+  const createPose = useCallback((x: number, y: number, theta: number): NavigationPose => ({
+    id:
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `pose-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    x,
+    y,
+    theta,
+  }), []);
+
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -326,11 +346,57 @@ export function MapCanvas({
       ctx.fillText('原点', originMarkerX + 8, originMarkerY - 8);
     }
 
+    if (mode === 'navigation' && navigationPoints.length > 0) {
+      ctx.strokeStyle = navigationTaskMode === 'loop' ? '#f97316' : '#60a5fa';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      navigationPoints.forEach((point, index) => {
+        const screenPoint = worldToScreen(point.x, point.y);
+        if (index === 0) {
+          ctx.moveTo(screenPoint.x, screenPoint.y);
+        } else {
+          ctx.lineTo(screenPoint.x, screenPoint.y);
+        }
+      });
+
+      if (navigationTaskMode === 'loop' && navigationPoints.length > 1) {
+        const firstPoint = worldToScreen(navigationPoints[0].x, navigationPoints[0].y);
+        ctx.lineTo(firstPoint.x, firstPoint.y);
+      }
+
+      ctx.stroke();
+
+      navigationPoints.forEach((point, index) => {
+        const screenPoint = worldToScreen(point.x, point.y);
+        const markerColor = navigationTaskMode === 'loop' ? '#f97316' : '#2563eb';
+
+        ctx.fillStyle = markerColor;
+        ctx.beginPath();
+        ctx.arc(screenPoint.x, screenPoint.y, 8, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(index + 1), screenPoint.x, screenPoint.y + 0.5);
+      });
+
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
     if (navDrag) {
       const start = worldToScreen(navDrag.startWorldX, navDrag.startWorldY);
       const end = worldToScreen(navDrag.currentWorldX, navDrag.currentWorldY);
 
-      const color = navDrag.mode === 'initial_pose' ? '#3b82f6' : '#ef4444';
+      const color =
+        navDrag.mode === 'initial_pose'
+          ? '#3b82f6'
+          : navDrag.mode === 'waypoint'
+            ? '#f97316'
+            : '#ef4444';
 
       // 起点圆
       ctx.fillStyle = color;
@@ -367,7 +433,11 @@ export function MapCanvas({
       ctx.fillStyle = color;
       ctx.font = '12px sans-serif';
       ctx.fillText(
-        navDrag.mode === 'initial_pose' ? '初始位姿' : '目标点',
+        navDrag.mode === 'initial_pose'
+          ? '初始位姿'
+          : navDrag.mode === 'waypoint'
+            ? '途经点'
+            : '目标点',
         start.x + 10,
         start.y - 10
       );
@@ -386,7 +456,12 @@ export function MapCanvas({
     view.scale,
     worldToScreen,
     navDrag,
+    navigationPoints,
+    navigationTaskMode,
+    onGoalPoseSelected,
+    onWaypointAdded,
     scanData,
+    createPose,
   ]);
 
   const drawRef = useRef(draw);
@@ -471,7 +546,14 @@ if (mode === 'navigation' && displayMapData && navClickMode !== 'none') {
     const theta = computeTheta(startWorldX, startWorldY, endWorldX, endWorldY);
 
     if (navClickMode === 'goal') {
-      publishGoal(startWorldX, startWorldY, theta);
+      const pose = createPose(startWorldX, startWorldY, theta);
+      if (onGoalPoseSelected) {
+        onGoalPoseSelected(pose);
+      } else {
+        publishGoal(startWorldX, startWorldY, theta);
+      }
+    } else if (navClickMode === 'waypoint') {
+      onWaypointAdded?.(createPose(startWorldX, startWorldY, theta));
     } else if (navClickMode === 'initial_pose') {
       publishInitialPose(startWorldX, startWorldY, theta);
     }
@@ -515,6 +597,9 @@ if (mode === 'navigation' && displayMapData && navClickMode !== 'none') {
     publishInitialPose,
     setNavClickMode,
     view,
+    createPose,
+    onGoalPoseSelected,
+    onWaypointAdded,
   ]);
 
   const overlayMap = displayMapData;
@@ -539,6 +624,9 @@ if (mode === 'navigation' && displayMapData && navClickMode !== 'none') {
           <div>尺寸：{overlayMap.info.width} x {overlayMap.info.height}</div>
           <div>缩放：{view.scale.toFixed(1)} px/m</div>
           <div>模式：{mode === 'navigation' ? '冻结首帧 /map' : '实时 /map'}</div>
+          {mode === 'navigation' && navigationPoints.length > 0 && (
+            <div>导航点：{navigationPoints.length} 个</div>
+          )}
         </div>
       )}
 

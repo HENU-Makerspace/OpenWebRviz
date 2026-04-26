@@ -49,6 +49,8 @@
   - [webbot.conf](/home/c6h4o2/dev/web/ROS/deploy/nginx/webbot.conf)
 - 后端 systemd 模板：
   - [webbot-server.service](/home/c6h4o2/dev/web/ROS/deploy/systemd/webbot-server.service)
+- SSH 隧道保活配置模板：
+  - [99-webbot-tunnels.conf](/home/c6h4o2/dev/web/ROS/deploy/sshd/99-webbot-tunnels.conf)
 
 ## Jetson 需要放置的文件
 
@@ -141,6 +143,43 @@ sudo systemctl reload nginx
 - 把 `/rosbridge/` 转发到本机 `127.0.0.1:19090`
 - 把 `/janus-demo/` 转发到本机 `127.0.0.1:18000`
 
+### 5. 配置云服务器 SSH 反向隧道保活
+
+把仓库里的 `sshd` 配置模板安装到云服务器：
+
+```bash
+sudo install -Dm644 deploy/sshd/99-webbot-tunnels.conf /etc/ssh/sshd_config.d/99-webbot-tunnels.conf
+sudo /usr/sbin/sshd -t
+sudo systemctl reload sshd
+```
+
+这一步是为了避免 Jetson 重启、4G 短时掉线或公网 IP 漂移后，云服务器上的旧反向转发会话长期残留，继续占着：
+
+- `127.0.0.1:19090`
+- `127.0.0.1:18088`
+- `127.0.0.1:18000`
+- `127.0.0.1:19100`
+- `127.0.0.1:19110`
+
+一旦旧会话还活着，新会话就会在 Jetson 上报：
+
+```text
+remote port forwarding failed for listen port 19090
+```
+
+然后 `systemd --user` 每秒重试一次，表现出来就是：
+
+- 浏览器 `wss://qiuhua.ying-guang.com/rosbridge/` 偶发连不上
+- Jetson 上 `webbot-reverse-tunnel.service` / `webbot-media-tunnel.service` 进入 `auto-restart`
+- 云服务器 `sshd` 日志里可能出现 `past MaxStartups`
+
+这份配置的目的：
+
+- `ClientAliveInterval 15` + `ClientAliveCountMax 2`
+  - 让云服务器能更快清理已经失联的旧 SSH 隧道
+- `MaxStartups 100:30:200`
+  - 降低短时重连风暴或公网扫描时误伤 Jetson 重连的概率
+
 ## Jetson 需要确认的项目
 
 ### 1. rosbridge 在 Jetson 本机可访问
@@ -203,6 +242,25 @@ systemctl --user status webbot-media-tunnel.service
   - 负责 Janus / demo / face 相关端口
 
 这样即使媒体链路重连，`rosbridge` 也不会一起抖掉。
+
+如果 Jetson 重启后仍然出现隧道起不来，优先检查两边：
+
+```bash
+# Jetson
+systemctl --user status webbot-reverse-tunnel.service webbot-media-tunnel.service
+
+# 云服务器
+ss -ltnp | egrep ':(19090|18088|18000|19100|19110) '
+journalctl -u sshd --since '10 minutes ago' --no-pager | tail -n 200
+```
+
+如果 `status` 里出现：
+
+```text
+remote port forwarding failed for listen port 19090
+```
+
+基本就说明云服务器上的旧 SSH 会话还没有释放对应监听端口，先确认上面第 5 步的 `sshd` 配置是否已经安装生效。
 
 这两条隧道会把下面这些 Jetson 本地服务映射到云服务器 `127.0.0.1`：
 

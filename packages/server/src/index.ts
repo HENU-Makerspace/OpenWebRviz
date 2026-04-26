@@ -362,6 +362,13 @@ app.get('/api/config', (c) => {
       up: Number(config?.teleop?.up ?? 0.0),
       publishRateHz: Number(config?.teleop?.publish_rate_hz ?? 25),
     },
+    navigation: {
+      navigateToPoseAction: '/navigate_to_pose',
+      navigateToPoseType: 'nav2_msgs/action/NavigateToPose',
+      navigateThroughPosesAction: '/navigate_through_poses',
+      navigateThroughPosesType: 'nav2_msgs/action/NavigateThroughPoses',
+      frameId: 'map',
+    },
   });
 });
 
