@@ -8,6 +8,7 @@ const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 5000;
 
 export function useRosConnection(wsUrl: string) {
+  const [ros, setRos] = useState<ROSLIB.Ros | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [error, setError] = useState<string | null>(null);
   const [reconnectCount, setReconnectCount] = useState(0);
@@ -65,6 +66,7 @@ export function useRosConnection(wsUrl: string) {
     if (rosRef.current) {
       rosRef.current.close();
       rosRef.current = null;
+      setRos(null);
     }
 
     try {
@@ -80,6 +82,8 @@ export function useRosConnection(wsUrl: string) {
       const timeoutId = setTimeout(() => {
         if (connectionStateRef.current === 'connecting') {
           rosInstance.close();
+          rosRef.current = null;
+          setRos(null);
           setConnectionState('error');
           const message = 'Connection timeout. Is rosbridge_websocket running at ' + wsUrl + '?';
           errorRef.current = message;
@@ -91,6 +95,8 @@ export function useRosConnection(wsUrl: string) {
         clearTimeout(timeoutId);
         console.log('Connected to ROS WebSocket server');
         reconnectAttemptRef.current = 0;
+        rosRef.current = rosInstance;
+        setRos(rosInstance);
         setConnectionState('connected');
         setError(null);
         errorRef.current = null;
@@ -103,12 +109,26 @@ export function useRosConnection(wsUrl: string) {
         errorRef.current = errorMessage;
         setConnectionState('error');
         setError(errorMessage);
+
+        if (shouldReconnectRef.current) {
+          if (rosRef.current === rosInstance) {
+            rosRef.current = null;
+            setRos(null);
+          }
+          try {
+            rosInstance.close();
+          } catch {
+            // Ignore close errors and continue with scheduled reconnect.
+          }
+          scheduleReconnect(errorMessage);
+        }
       });
 
       rosInstance.on('close', () => {
         clearTimeout(timeoutId);
         console.log('ROS WebSocket connection closed');
         rosRef.current = null;
+        setRos(null);
 
         if (!shouldReconnectRef.current) {
           setConnectionState('disconnected');
@@ -120,6 +140,7 @@ export function useRosConnection(wsUrl: string) {
       });
 
       rosRef.current = rosInstance;
+      setRos(rosInstance);
     } catch (err) {
       console.error('Failed to create ROS connection:', err);
       const message = err instanceof Error ? err.message : 'Failed to connect';
@@ -146,6 +167,7 @@ export function useRosConnection(wsUrl: string) {
       rosRef.current.close();
       rosRef.current = null;
     }
+    setRos(null);
   }, [clearReconnectTimer]);
 
   const reconnect = useCallback(() => {
@@ -167,6 +189,7 @@ export function useRosConnection(wsUrl: string) {
         rosRef.current.close();
         rosRef.current = null;
       }
+      setRos(null);
     };
   }, [clearReconnectTimer, connect, wsUrl]);
 
@@ -179,11 +202,12 @@ export function useRosConnection(wsUrl: string) {
         rosRef.current.close();
         rosRef.current = null;
       }
+      setRos(null);
     };
   }, [clearReconnectTimer]);
 
   return {
-    ros: rosRef.current,
+    ros,
     isConnected: connectionState === 'connected',
     isConnecting: connectionState === 'connecting',
     connectionState,
