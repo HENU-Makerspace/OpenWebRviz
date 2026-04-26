@@ -25,6 +25,8 @@ export interface NavigationTaskStatus {
   error: string | null;
   activeGoalId: string | null;
   iteration: number;
+  waypointIndex: number;
+  totalWaypoints: number;
   updatedAt: number | null;
 }
 
@@ -82,35 +84,40 @@ export function useNavigationTasks(
     error: null,
     activeGoalId: null,
     iteration: 0,
+    waypointIndex: 0,
+    totalWaypoints: 0,
     updatedAt: null,
   });
 
   const navigateToPoseActionRef = useRef<ROSLIB.Action<any, any, any> | null>(null);
-  const navigateThroughPosesActionRef = useRef<ROSLIB.Action<any, any, any> | null>(null);
   const activeGoalRef = useRef<{ id: string; mode: NavigationTaskMode } | null>(null);
-  const loopContextRef = useRef<{ poses: NavigationPose[]; iteration: number } | null>(null);
+  const queueContextRef = useRef<{
+    poses: NavigationPose[];
+    currentIndex: number;
+    iteration: number;
+    mode: NavigationTaskMode;
+  } | null>(null);
   const cancelRequestedRef = useRef(false);
+  const [pathResetToken, setPathResetToken] = useState(0);
 
   const frameId = config?.frameId || 'map';
   const navigateToPoseActionName = config?.navigateToPoseAction || '/navigate_to_pose';
   const navigateToPoseActionType = config?.navigateToPoseType || 'nav2_msgs/action/NavigateToPose';
-  const navigateThroughPosesActionName = config?.navigateThroughPosesAction || '/navigate_through_poses';
-  const navigateThroughPosesActionType = config?.navigateThroughPosesType || 'nav2_msgs/action/NavigateThroughPoses';
-
   useEffect(() => {
     activeGoalRef.current = null;
-    loopContextRef.current = null;
+    queueContextRef.current = null;
     cancelRequestedRef.current = false;
 
     if (!ros || !isConnected) {
       navigateToPoseActionRef.current = null;
-      navigateThroughPosesActionRef.current = null;
       setStatus({
         mode: null,
         state: 'idle',
         error: null,
         activeGoalId: null,
         iteration: 0,
+        waypointIndex: 0,
+        totalWaypoints: 0,
         updatedAt: Date.now(),
       });
       return;
@@ -122,23 +129,14 @@ export function useNavigationTasks(
       actionType: navigateToPoseActionType,
     });
 
-    navigateThroughPosesActionRef.current = new ROSLIB.Action({
-      ros,
-      name: navigateThroughPosesActionName,
-      actionType: navigateThroughPosesActionType,
-    });
-
     return () => {
       navigateToPoseActionRef.current = null;
-      navigateThroughPosesActionRef.current = null;
       activeGoalRef.current = null;
-      loopContextRef.current = null;
+      queueContextRef.current = null;
       cancelRequestedRef.current = false;
     };
   }, [
     isConnected,
-    navigateThroughPosesActionName,
-    navigateThroughPosesActionType,
     navigateToPoseActionName,
     navigateToPoseActionType,
     ros,
@@ -149,19 +147,18 @@ export function useNavigationTasks(
 
     const activeGoal = activeGoalRef.current;
     if (activeGoal?.id) {
-      if (activeGoal.mode === 'single') {
-        navigateToPoseActionRef.current?.cancelGoal(activeGoal.id);
-      } else {
-        navigateThroughPosesActionRef.current?.cancelGoal(activeGoal.id);
-      }
+      navigateToPoseActionRef.current?.cancelGoal(activeGoal.id);
     }
 
     activeGoalRef.current = null;
-    loopContextRef.current = null;
+    queueContextRef.current = null;
+    setPathResetToken((value) => value + 1);
     setStatus((prev) => ({
       ...prev,
       state: prev.state === 'idle' ? 'idle' : 'canceled',
       activeGoalId: null,
+      waypointIndex: 0,
+      totalWaypoints: 0,
       updatedAt: Date.now(),
     }));
   }, []);
@@ -188,21 +185,55 @@ export function useNavigationTasks(
           return;
         }
 
-        if (loopContextRef.current && !cancelRequestedRef.current) {
-          const nextIteration = loopContextRef.current.iteration + 1;
-          loopContextRef.current = {
-            poses: loopContextRef.current.poses,
-            iteration: nextIteration,
-          };
-          sendSingleGoal(loopContextRef.current.poses[0], 'loop', nextIteration);
+        if (queueContextRef.current) {
+          const { poses, currentIndex, iteration: currentIteration, mode: currentMode } = queueContextRef.current;
+
+          if (currentIndex < poses.length - 1) {
+            const nextIndex = currentIndex + 1;
+            queueContextRef.current = {
+              poses,
+              currentIndex: nextIndex,
+              iteration: currentIteration,
+              mode: currentMode,
+            };
+            sendSingleGoal(poses[nextIndex], currentMode, currentIteration);
+            return;
+          }
+
+          if (currentMode === 'loop') {
+            const nextIteration = currentIteration + 1;
+            queueContextRef.current = {
+              poses,
+              currentIndex: 0,
+              iteration: nextIteration,
+              mode: currentMode,
+            };
+            sendSingleGoal(poses[0], currentMode, nextIteration);
+            return;
+          }
+
+          queueContextRef.current = null;
+          activeGoalRef.current = null;
+          setPathResetToken((value) => value + 1);
+          setStatus((prev) => ({
+            ...prev,
+            state: 'succeeded',
+            activeGoalId: null,
+            waypointIndex: poses.length,
+            totalWaypoints: poses.length,
+            updatedAt: Date.now(),
+          }));
           return;
         }
 
         activeGoalRef.current = null;
+        setPathResetToken((value) => value + 1);
         setStatus((prev) => ({
           ...prev,
           state: 'succeeded',
           activeGoalId: null,
+          waypointIndex: 1,
+          totalWaypoints: 1,
           updatedAt: Date.now(),
         }));
       },
@@ -213,12 +244,14 @@ export function useNavigationTasks(
         }
 
         activeGoalRef.current = null;
-        loopContextRef.current = null;
+        queueContextRef.current = null;
+        setPathResetToken((value) => value + 1);
         setStatus((prev) => ({
           ...prev,
           state: cancelRequestedRef.current ? 'canceled' : 'failed',
           error,
           activeGoalId: null,
+          waypointIndex: 0,
           updatedAt: Date.now(),
         }));
       },
@@ -235,79 +268,8 @@ export function useNavigationTasks(
       error: null,
       activeGoalId: issuedGoalId,
       iteration,
-      updatedAt: Date.now(),
-    });
-  }, [frameId]);
-
-  const sendRouteGoal = useCallback((poses: NavigationPose[], mode: NavigationTaskMode, iteration: number) => {
-    if (!navigateThroughPosesActionRef.current) {
-      throw new Error('NavigateThroughPoses action is not ready');
-    }
-
-    let issuedGoalId: string | undefined;
-
-    issuedGoalId = navigateThroughPosesActionRef.current.sendGoal(
-      {
-        poses: poses.map((pose) => toPoseStamped(pose, frameId)),
-        behavior_tree: '',
-      },
-      () => {
-        if (!issuedGoalId || activeGoalRef.current?.id !== issuedGoalId) {
-          return;
-        }
-
-        if (cancelRequestedRef.current) {
-          activeGoalRef.current = null;
-          return;
-        }
-
-        if (loopContextRef.current && !cancelRequestedRef.current) {
-          const nextIteration = loopContextRef.current.iteration + 1;
-          loopContextRef.current = {
-            poses: loopContextRef.current.poses,
-            iteration: nextIteration,
-          };
-          sendRouteGoal(loopContextRef.current.poses, 'loop', nextIteration);
-          return;
-        }
-
-        activeGoalRef.current = null;
-        setStatus((prev) => ({
-          ...prev,
-          state: 'succeeded',
-          activeGoalId: null,
-          updatedAt: Date.now(),
-        }));
-      },
-      undefined,
-      (error: string) => {
-        if (!issuedGoalId || activeGoalRef.current?.id !== issuedGoalId) {
-          return;
-        }
-
-        activeGoalRef.current = null;
-        loopContextRef.current = null;
-        setStatus((prev) => ({
-          ...prev,
-          state: cancelRequestedRef.current ? 'canceled' : 'failed',
-          error,
-          activeGoalId: null,
-          updatedAt: Date.now(),
-        }));
-      },
-    );
-
-    if (!issuedGoalId) {
-      throw new Error('NavigateThroughPoses goal was rejected');
-    }
-
-    activeGoalRef.current = { id: issuedGoalId, mode };
-    setStatus({
-      mode,
-      state: 'running',
-      error: null,
-      activeGoalId: issuedGoalId,
-      iteration,
+      waypointIndex: queueContextRef.current ? queueContextRef.current.currentIndex + 1 : 1,
+      totalWaypoints: queueContextRef.current ? queueContextRef.current.poses.length : 1,
       updatedAt: Date.now(),
     });
   }, [frameId]);
@@ -319,7 +281,8 @@ export function useNavigationTasks(
 
     cancelCurrentTask();
     cancelRequestedRef.current = false;
-    loopContextRef.current = null;
+    queueContextRef.current = null;
+    setPathResetToken((value) => value + 1);
     sendSingleGoal(pose, 'single', 1);
   }, [cancelCurrentTask, isConnected, ros, sendSingleGoal]);
 
@@ -334,9 +297,15 @@ export function useNavigationTasks(
 
     cancelCurrentTask();
     cancelRequestedRef.current = false;
-    loopContextRef.current = null;
-    sendRouteGoal(poses, 'route', 1);
-  }, [cancelCurrentTask, isConnected, ros, sendRouteGoal]);
+    queueContextRef.current = {
+      poses,
+      currentIndex: 0,
+      iteration: 1,
+      mode: 'route',
+    };
+    setPathResetToken((value) => value + 1);
+    sendSingleGoal(poses[0], 'route', 1);
+  }, [cancelCurrentTask, isConnected, ros, sendSingleGoal]);
 
   const startLoop = useCallback(async (poses: NavigationPose[]) => {
     if (!ros || !isConnected) {
@@ -349,14 +318,20 @@ export function useNavigationTasks(
 
     cancelCurrentTask();
     cancelRequestedRef.current = false;
-    loopContextRef.current = { poses, iteration: 1 };
-
-    sendRouteGoal(poses, 'loop', 1);
-  }, [cancelCurrentTask, isConnected, ros, sendRouteGoal, sendSingleGoal]);
+    queueContextRef.current = {
+      poses,
+      currentIndex: 0,
+      iteration: 1,
+      mode: 'loop',
+    };
+    setPathResetToken((value) => value + 1);
+    sendSingleGoal(poses[0], 'loop', 1);
+  }, [cancelCurrentTask, isConnected, ros, sendSingleGoal]);
 
   return {
     status,
     isRunning: status.state === 'running',
+    pathResetToken,
     startSingleGoal,
     startRoute,
     startLoop,

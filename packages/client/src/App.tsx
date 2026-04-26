@@ -446,6 +446,9 @@ function NavigationPanel({
                       ? '已取消'
                       : '失败'
             }</div>
+            {taskStatus.totalWaypoints > 1 && (
+              <div>当前点位：{Math.min(taskStatus.waypointIndex, taskStatus.totalWaypoints)} / {taskStatus.totalWaypoints}</div>
+            )}
             {taskStatus.error && <div className="mt-1 text-red-500">{taskStatus.error}</div>}
           </div>
 
@@ -768,6 +771,7 @@ function AppContent() {
             selectedMap={selectedMap}
             navigationTaskMode={navigationTaskMode}
             navigationPoints={patrolPoints}
+            pathResetToken={navigationTasks.pathResetToken}
             onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)}
             onWaypointAdded={addPatrolPoint}
           />
