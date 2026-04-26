@@ -15,10 +15,14 @@ export function useRosPath(
   ros: ROSLIB.Ros | null,
   globalPlanTopic: string = '/plan',
   localPlanTopic: string = '/local_plan',
-  paused: boolean = false
+  paused: boolean = false,
+  resetToken: number = 0,
 ) {
   const [globalPath, setGlobalPath] = useState<NavPath | null>(null);
   const [localPath, setLocalPath] = useState<NavPath | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const latestGlobalRef = useRef<NavPath | null>(null);
+  const latestLocalRef = useRef<NavPath | null>(null);
 
   useEffect(() => {
     if (!ros) {
@@ -33,6 +37,21 @@ export function useRosPath(
       name: globalPlanTopic,
       messageType: 'nav_msgs/msg/Path',
     });
+
+    const flushLatest = () => {
+      rafRef.current = null;
+      if (latestGlobalRef.current) {
+        setGlobalPath(latestGlobalRef.current);
+      }
+      if (latestLocalRef.current) {
+        setLocalPath(latestLocalRef.current);
+      }
+    };
+
+    const scheduleFlush = () => {
+      if (rafRef.current != null) return;
+      rafRef.current = window.requestAnimationFrame(flushLatest);
+    };
 
     globalSub.subscribe((message: unknown) => {
       if (paused) return;
@@ -52,10 +71,11 @@ export function useRosPath(
         y: p.pose.position.y,
       }));
 
-      setGlobalPath({
+      latestGlobalRef.current = {
         points,
         timestamp: pathMsg.header.stamp.sec + pathMsg.header.stamp.nsec / 1e9,
-      });
+      };
+      scheduleFlush();
     });
 
     // Subscribe to local plan
@@ -83,10 +103,11 @@ export function useRosPath(
         y: p.pose.position.y,
       }));
 
-      setLocalPath({
+      latestLocalRef.current = {
         points,
         timestamp: pathMsg.header.stamp.sec + pathMsg.header.stamp.nsec / 1e9,
-      });
+      };
+      scheduleFlush();
     });
 
     (globalSub as any).on('error', (err: Error) => {
@@ -98,12 +119,23 @@ export function useRosPath(
     });
 
     return () => {
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       globalSub.unsubscribe();
       localSub.unsubscribe();
       setGlobalPath(null);
       setLocalPath(null);
     };
   }, [ros, globalPlanTopic, localPlanTopic, paused]);
+
+  useEffect(() => {
+    latestGlobalRef.current = null;
+    latestLocalRef.current = null;
+    setGlobalPath(null);
+    setLocalPath(null);
+  }, [resetToken]);
 
   return {
     globalPath,

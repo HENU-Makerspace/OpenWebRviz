@@ -49,6 +49,8 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
 
   // 关键：缓存最近收到的 TF 边
   const tfCacheRef = useRef<Map<string, TfTransform>>(new Map());
+  const rafRef = useRef<number | null>(null);
+  const latestPoseRef = useRef<RobotPose | null>(null);
 
   useEffect(() => {
     if (!ros) {
@@ -83,6 +85,12 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
       const mapToCameraInit = getTf('map', 'camera_init');
       const cameraInitToBody = getTf('camera_init', 'body');
       const bodyToBaseLink = getTf('body', 'base_link');
+      const commitLatestPose = () => {
+        rafRef.current = null;
+        if (latestPoseRef.current) {
+          setRobotPose(latestPoseRef.current);
+        }
+      };
 
       // 优先合成 map -> body / map -> base_link
       if (mapToCameraInit && cameraInitToBody) {
@@ -109,36 +117,49 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
 
           const mapToBaseLink = compose2D(mapToBody, c);
 
-          setRobotPose({
+          latestPoseRef.current = {
             x: mapToBaseLink.x,
             y: mapToBaseLink.y,
             theta: mapToBaseLink.theta,
             frameId: 'map->base_link',
-          });
+          };
+          if (rafRef.current == null) {
+            rafRef.current = window.requestAnimationFrame(commitLatestPose);
+          }
           return;
         }
 
-        setRobotPose({
+        latestPoseRef.current = {
           x: mapToBody.x,
           y: mapToBody.y,
           theta: mapToBody.theta,
           frameId: 'map->body',
-        });
+        };
+        if (rafRef.current == null) {
+          rafRef.current = window.requestAnimationFrame(commitLatestPose);
+        }
         return;
       }
 
       // 没有 map->camera_init 时，退回到局部 pose
       if (cameraInitToBody) {
-        setRobotPose({
+        latestPoseRef.current = {
           x: cameraInitToBody.transform.translation.x,
           y: cameraInitToBody.transform.translation.y,
           theta: quatToYaw(cameraInitToBody.transform.rotation),
           frameId: 'camera_init->body',
-        });
+        };
+        if (rafRef.current == null) {
+          rafRef.current = window.requestAnimationFrame(commitLatestPose);
+        }
       }
     });
 
     return () => {
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       tfSub.unsubscribe();
       setRobotPose(null);
       tfCacheRef.current.clear();

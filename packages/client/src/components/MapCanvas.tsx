@@ -17,6 +17,7 @@ interface MapCanvasProps {
   selectedMap?: string | null;
   navigationTaskMode?: NavigationTaskMode;
   navigationPoints?: NavigationPose[];
+  pathResetToken?: number;
   onGoalPoseSelected?: (pose: NavigationPose) => void;
   onWaypointAdded?: (pose: NavigationPose) => void;
 }
@@ -36,6 +37,7 @@ export function MapCanvas({
   selectedMap = null,
   navigationTaskMode = 'single',
   navigationPoints = [],
+  pathResetToken = 0,
   onGoalPoseSelected,
   onWaypointAdded,
 }: MapCanvasProps) {
@@ -62,7 +64,7 @@ export function MapCanvas({
   // 始终订阅 /map，不再使用本地静态地图文件
   const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused);
   const { robotPose: tfPose } = useRosTfTree(ros, tfPaused);
-  const { globalPath, localPath } = useRosPath(ros, '/plan', '/local_plan', pathPaused);
+  const { globalPath, localPath } = useRosPath(ros, '/plan', '/local_plan', pathPaused, pathResetToken);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
 
@@ -458,38 +460,19 @@ export function MapCanvas({
     navDrag,
     navigationPoints,
     navigationTaskMode,
-    onGoalPoseSelected,
-    onWaypointAdded,
     scanData,
     createPose,
   ]);
 
-  const drawRef = useRef(draw);
-  drawRef.current = draw;
-
-  const [renderKey, setRenderKey] = useState(0);
-
   useEffect(() => {
-    setRenderKey(k => k + 1);
-  }, [
-    displayMapData,
-    displayPose,
-    canvasSize,
-    view,
-    isConnected,
-    layers.map,
-    layers.tf,
-    layers.globalPlan,
-    layers.localPlan,
-    globalPath,
-    localPath,
-    navDrag,
-    scanData,
-  ]);
+    const raf = window.requestAnimationFrame(() => {
+      draw();
+    });
 
-  useEffect(() => {
-    drawRef.current();
-  }, [renderKey]);
+    return () => {
+      window.cancelAnimationFrame(raf);
+    };
+  }, [draw]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();

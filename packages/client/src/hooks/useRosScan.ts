@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as ROSLIB from 'roslib';
 
 export interface LaserScanData {
@@ -17,6 +17,8 @@ export function useRosScan(
   paused: boolean = false
 ) {
   const [scanData, setScanData] = useState<LaserScanData | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const latestScanRef = useRef<LaserScanData | null>(null);
 
   useEffect(() => {
     if (!ros) {
@@ -29,6 +31,13 @@ export function useRosScan(
       name: topicName,
       messageType: 'sensor_msgs/msg/LaserScan',
     });
+
+    const flushLatest = () => {
+      rafRef.current = null;
+      if (latestScanRef.current) {
+        setScanData(latestScanRef.current);
+      }
+    };
 
     scanSub.subscribe((message: unknown) => {
       if (paused) return;
@@ -45,7 +54,7 @@ export function useRosScan(
 
       if (!msg.ranges || !Array.isArray(msg.ranges)) return;
 
-      setScanData({
+      latestScanRef.current = {
         angleMin: msg.angle_min,
         angleMax: msg.angle_max,
         angleIncrement: msg.angle_increment,
@@ -53,10 +62,18 @@ export function useRosScan(
         rangeMax: msg.range_max,
         ranges: msg.ranges,
         frameId: msg.header?.frame_id || '',
-      });
+      };
+
+      if (rafRef.current == null) {
+        rafRef.current = window.requestAnimationFrame(flushLatest);
+      }
     });
 
     return () => {
+      if (rafRef.current != null) {
+        window.cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
       scanSub.unsubscribe();
       setScanData(null);
     };
