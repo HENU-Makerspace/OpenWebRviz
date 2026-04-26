@@ -13,3 +13,7 @@ install/
 log/
 *.gv
 *.pdf
+.codex
+packages/server/src/__pycache__/
+packages/server/systemd/__pycache__/
+qiuhua.ying-guang.com_nginx/
