@@ -129,7 +129,10 @@ export function MapCanvas({
 
     for (let i = 0; i < displayMapData.data.length; i++) {
       const value = displayMapData.data[i];
-      const offset = i * 4;
+      const sourceX = i % offscreen.width;
+      const sourceY = Math.floor(i / offscreen.width);
+      const flippedY = offscreen.height - 1 - sourceY;
+      const offset = (flippedY * offscreen.width + sourceX) * 4;
 
       let channel = 176;
       if (value >= 65) {
@@ -165,16 +168,16 @@ export function MapCanvas({
 
   const worldToScreen = useCallback(
     (x: number, y: number) => ({
-      x: view.offsetX - x * view.scale,
-      y: view.offsetY + y * view.scale,
+      x: view.offsetX + x * view.scale,
+      y: view.offsetY - y * view.scale,
     }),
     [view.offsetX, view.offsetY, view.scale]
   );
 
   const screenToWorld = useCallback(
     (screenX: number, screenY: number) => ({
-      x: (view.offsetX - screenX) / view.scale,
-      y: (screenY - view.offsetY) / view.scale,
+      x: (screenX - view.offsetX) / view.scale,
+      y: (view.offsetY - screenY) / view.scale,
     }),
     [view.offsetX, view.offsetY, view.scale]
   );
@@ -226,15 +229,14 @@ export function MapCanvas({
     if (layers.map) {
       const cachedMap = mapRasterRef.current;
       if (cachedMap) {
-        const drawX = view.offsetX - info.origin.position.x * view.scale + info.resolution * view.scale;
-        const drawY = view.offsetY + info.origin.position.y * view.scale;
+        const drawX = view.offsetX + info.origin.position.x * view.scale;
+        const drawY =
+          view.offsetY - (info.origin.position.y + info.height * info.resolution) * view.scale;
         const drawWidth = info.width * info.resolution * view.scale;
         const drawHeight = info.height * info.resolution * view.scale;
 
         ctx.imageSmoothingEnabled = false;
-        // Keep the cached raster aligned with the original per-cell renderer:
-        // OccupancyGrid cells grow toward negative screen X in this view transform.
-        ctx.drawImage(cachedMap, drawX, drawY, -drawWidth, drawHeight);
+        ctx.drawImage(cachedMap, drawX, drawY, drawWidth, drawHeight);
       }
 
       const origin = worldToScreen(info.origin.position.x, info.origin.position.y);
