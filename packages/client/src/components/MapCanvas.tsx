@@ -226,13 +226,15 @@ export function MapCanvas({
     if (layers.map) {
       const cachedMap = mapRasterRef.current;
       if (cachedMap) {
-        const drawX = view.offsetX - info.origin.position.x * view.scale;
+        const drawX = view.offsetX - info.origin.position.x * view.scale + info.resolution * view.scale;
         const drawY = view.offsetY + info.origin.position.y * view.scale;
         const drawWidth = info.width * info.resolution * view.scale;
         const drawHeight = info.height * info.resolution * view.scale;
 
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(cachedMap, drawX, drawY, drawWidth, drawHeight);
+        // Keep the cached raster aligned with the original per-cell renderer:
+        // OccupancyGrid cells grow toward negative screen X in this view transform.
+        ctx.drawImage(cachedMap, drawX, drawY, -drawWidth, drawHeight);
       }
 
       const origin = worldToScreen(info.origin.position.x, info.origin.position.y);
