@@ -70,7 +70,7 @@ export function MapCanvas({
   const scanPaused = isPaused || !layers.scan;
 
   const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused);
-  const { robotPose: tfPose } = useRosTfTree(ros, tfPaused);
+  const { robotPose: tfPose, resolvePoseInMap, tfVersion } = useRosTfTree(ros, tfPaused);
   const { globalPath, localPath } = useRosPath(ros, '/plan', '/local_plan', pathPaused, pathResetToken);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
@@ -373,12 +373,16 @@ export function MapCanvas({
       return;
     }
 
-    if (layers.scan && scanData && displayPose) {
+    if (layers.scan && scanData) {
       ctx.fillStyle = '#38bdf8';
+      const sensorPose = resolvePoseInMap(scanData.frameId) || displayPose;
+      if (!sensorPose) {
+        return;
+      }
 
-      const robotYaw = displayPose.theta;
-      const cosYaw = Math.cos(robotYaw);
-      const sinYaw = Math.sin(robotYaw);
+      const sensorYaw = sensorPose.theta;
+      const cosYaw = Math.cos(sensorYaw);
+      const sinYaw = Math.sin(sensorYaw);
       const step = Math.max(1, Math.ceil(scanData.ranges.length / MAX_SCAN_POINTS));
 
       for (let i = 0; i < scanData.ranges.length; i += step) {
@@ -390,8 +394,8 @@ export function MapCanvas({
         const angle = scanData.angleMin + i * scanData.angleIncrement;
         const localX = range * Math.cos(angle);
         const localY = range * Math.sin(angle);
-        const worldX = displayPose.x + cosYaw * localX - sinYaw * localY;
-        const worldY = displayPose.y + sinYaw * localX + cosYaw * localY;
+        const worldX = sensorPose.x + cosYaw * localX - sinYaw * localY;
+        const worldY = sensorPose.y + sinYaw * localX + cosYaw * localY;
         const screen = worldToScreen(worldX, worldY);
 
         if (screen.x < 0 || screen.x >= width || screen.y < 0 || screen.y >= height) {
@@ -469,7 +473,7 @@ export function MapCanvas({
         start.y - 10
       );
     }
-  }, [canvasSize, displayMapData, displayPose, layers.scan, layers.tf, navDrag, scanData, worldToScreen]);
+  }, [canvasSize, displayMapData, displayPose, layers.scan, layers.tf, navDrag, resolvePoseInMap, scanData, tfVersion, worldToScreen]);
 
   useLayoutEffect(() => {
     drawMapLayer();
