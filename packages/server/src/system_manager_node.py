@@ -11,6 +11,11 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 from jetson_interfaces.srv import StartNav
 
+try:
+    from motion_msgs.msg import MotionCtrl
+except ImportError:
+    MotionCtrl = None
+
 
 def discover_server_url():
     """Discover server URL by scanning entire local subnet"""
@@ -105,6 +110,12 @@ class SystemManager(Node):
         self.server_url = self.get_parameter('server_url').value
         self.get_logger().info(f'Server URL: {self.server_url}')
 
+        self.motion_cmd_pub = None
+        if MotionCtrl is not None:
+            self.motion_cmd_pub = self.create_publisher(MotionCtrl, '/diablo/MotionCmd', 10)
+        else:
+            self.get_logger().warn('motion_msgs.msg.MotionCtrl is unavailable; stop_all will not publish an explicit stop command')
+
         os.makedirs(self.maps_dir, exist_ok=True)
 
         self.create_service(Trigger, '/system/start_slam', self.handle_start_slam)
@@ -160,6 +171,33 @@ class SystemManager(Node):
             subprocess.run(['pkill', '-f', 'navigation_launch'], capture_output=True)
             subprocess.run(['pkill', '-f', 'robot_state_publisher'], capture_output=True)
             subprocess.run(['pkill', '-f', 'gz sim'], capture_output=True)
+
+    def publish_stop_motion(self):
+        if self.motion_cmd_pub is None or MotionCtrl is None:
+            return
+
+        try:
+            msg = MotionCtrl()
+            msg.mode_mark = False
+            msg.mode.stand_mode = False
+            msg.mode.pitch_ctrl_mode = False
+            msg.mode.roll_ctrl_mode = False
+            msg.mode.height_ctrl_mode = True
+            msg.mode.jump_mode = False
+            msg.mode.split_mode = False
+            msg.value.forward = 0.0
+            msg.value.left = 0.0
+            msg.value.up = 0.0
+            msg.value.roll = 0.0
+            msg.value.pitch = 0.0
+            msg.value.leg_split = 0.0
+
+            # Publish a few times to make the stop command more robust against transient loss.
+            for _ in range(3):
+                self.motion_cmd_pub.publish(msg)
+                time.sleep(0.05)
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to publish stop motion command: {exc}')
 
     def handle_start_slam(self, request, response):
         self.kill_current_process()
@@ -237,7 +275,9 @@ class SystemManager(Node):
         return response
 
     def handle_stop_all(self, request, response):
+        self.publish_stop_motion()
         self.kill_current_process()
+        self.publish_stop_motion()
         response.success = True
         response.message = 'All tasks stopped'
         return response

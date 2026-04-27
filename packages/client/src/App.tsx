@@ -246,6 +246,7 @@ function NavigationPanel({
 }: NavigationPanelProps & { ros: any; isConnected: boolean }) {
   const { maps, fetchMaps, loading } = useMapManager();
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [stance, setStance] = useState<Stance>('crouch');
   const [speed, setSpeed] = useState<Speed>('high');
 
@@ -272,8 +273,17 @@ function NavigationPanel({
   };
 
   const stopNavigation = async () => {
+    if (stopping) {
+      return;
+    }
+
+    setStopping(true);
     onCancelTask();
-    await stopAll();
+    try {
+      await stopAll();
+    } finally {
+      setStopping(false);
+    }
   };
 
   if (loading) {
@@ -377,7 +387,7 @@ function NavigationPanel({
       {selectedMap && !isNavRunning && (
         <button
           onClick={startNavigation}
-          disabled={starting}
+          disabled={starting || stopping}
           className="w-full bg-purple-600 text-white text-xs py-1 px-2 rounded hover:bg-purple-700 disabled:opacity-50"
         >
           {starting ? '启动中...' : `启动导航（${stance === 'stand' ? '站立' : '蹲姿'}，${speed === 'high' ? '高速' : speed === 'medium' ? '中速' : '低速'}）`}
@@ -531,7 +541,7 @@ function NavigationPanel({
 
               <button
                 onClick={() => void onStartPatrolTask()}
-                disabled={patrolPoints.length < 2 || taskRunning}
+                disabled={patrolPoints.length < 2 || taskRunning || stopping}
                 className="w-full rounded bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700 disabled:opacity-50"
               >
                 {taskRunning
@@ -546,17 +556,19 @@ function NavigationPanel({
           {taskRunning && (
             <button
               onClick={onCancelTask}
-              className="w-full bg-amber-500 text-white text-xs py-1 px-2 rounded hover:bg-amber-600"
+              disabled={stopping}
+              className="w-full bg-amber-500 text-white text-xs py-1 px-2 rounded hover:bg-amber-600 disabled:opacity-50"
             >
               停止当前任务
             </button>
           )}
 
           <button
-            onClick={stopNavigation}
-            className="w-full bg-red-500 text-white text-xs py-1 px-2 rounded hover:bg-red-600"
+            onClick={() => void stopNavigation()}
+            disabled={stopping || robotStatus.loading}
+            className="w-full bg-red-500 text-white text-xs py-1 px-2 rounded hover:bg-red-600 disabled:opacity-50"
           >
-            停止导航
+            {stopping || robotStatus.loading ? '停止导航中...' : '停止导航'}
           </button>
         </div>
       )}
