@@ -1,15 +1,14 @@
-# 兼容旧路径：默认按本地联调配置读取。
-# 新增了两套显式配置：
+# 默认配置改为云端 / IoT_Card 路径。
+# 如果要走实验室 Wi-Fi 直连 Jetson，请显式使用：
 # - robot_config.local.yaml
-# - robot_config.cloud.yaml
-# 建议后续通过 ROBOT_CONFIG_PROFILE=local|cloud 来选择。
+# - ROBOT_CONFIG_PROFILE=local
 
 server:
-  host: "127.0.0.1"
+  host: "182.43.86.126"
   port: 4001
 
 jetson:
-  host: "192.168.1.58"
+  host: "192.168.43.100"
   user: "nvidia"
   maps_dir: "/home/nvidia/maps"
   rosbridge_port: 9090
@@ -19,8 +18,8 @@ rosbridge:
   address: "0.0.0.0"
 
 frontend:
-  api_url: "http://127.0.0.1:4001"
-  ws_url: "ws://192.168.1.58:9090"
+  api_url: "https://qiuhua.ying-guang.com"
+  ws_url: "wss://qiuhua.ying-guang.com/rosbridge/"
 
 reverse_tunnel:
   rosbridge_port: 19090
@@ -41,11 +40,11 @@ media:
   control_service_name: "webbot-media-control.service"
   control_script_path: "/home/nvidia/bin/webbot-media-control.py"
   control_unit_path: "/home/nvidia/.config/systemd/user/webbot-media-control.service"
-  janus_host: "192.168.1.58"
-  janus_http_port: 8088
+  janus_host: "127.0.0.1"
+  janus_http_port: 18088
   janus_api_path: "/janus"
-  janus_demo_port: 8000
-  control_proxy_host: "192.168.1.58"
+  janus_demo_port: 18000
+  control_proxy_host: "127.0.0.1"
   control_proxy_port: 19110
   janus_binary: "/opt/janus/bin/janus"
   janus_html_dir: "/opt/janus/share/janus/html"
@@ -75,7 +74,7 @@ face:
   service_name: "webbot-face.service"
   service_script_path: "/home/nvidia/bin/webbot-face-service.py"
   service_unit_path: "/home/nvidia/.config/systemd/user/webbot-face.service"
-  proxy_host: "192.168.1.58"
+  proxy_host: "127.0.0.1"
   proxy_port: 19100
   api_path: "/faces/latest"
   health_path: "/health"

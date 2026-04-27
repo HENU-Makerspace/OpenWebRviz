@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun run dev:local",
+    "dev": "bun run dev:cloud",
     "dev:local": "ROBOT_CONFIG_PROFILE=local bun run --watch src/index.ts",
     "dev:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run --watch src/index.ts",
-    "start": "bun run start:local",
+    "start": "bun run start:cloud",
     "start:local": "ROBOT_CONFIG_PROFILE=local bun run src/index.ts",
     "start:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run src/index.ts",
     "build": "tsc",

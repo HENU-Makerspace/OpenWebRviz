@@ -53,9 +53,9 @@ function resolveOverridePath() {
   return path.isAbsolute(override) ? override : path.resolve(process.cwd(), override);
 }
 
-export function resolveRobotConfigPath(configDir: string, profile = process.env.ROBOT_CONFIG_PROFILE || 'local') {
+export function resolveRobotConfigPath(configDir: string, profile = process.env.ROBOT_CONFIG_PROFILE || 'cloud') {
   const overridePath = resolveOverridePath();
-  const normalizedProfile = profile.trim() || 'local';
+  const normalizedProfile = profile.trim() || 'cloud';
 
   const candidates = [
     overridePath,
@@ -69,7 +69,7 @@ export function resolveRobotConfigPath(configDir: string, profile = process.env.
   };
 }
 
-export function loadRobotConfig(configDir: string, profile = process.env.ROBOT_CONFIG_PROFILE || 'local'): RobotConfigLoadResult {
+export function loadRobotConfig(configDir: string, profile = process.env.ROBOT_CONFIG_PROFILE || 'cloud'): RobotConfigLoadResult {
   const { profile: resolvedProfile, configPath } = resolveRobotConfigPath(configDir, profile);
 
   if (!configPath) {
