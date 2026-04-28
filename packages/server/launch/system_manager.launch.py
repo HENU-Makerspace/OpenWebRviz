@@ -53,6 +53,18 @@ def generate_launch_description():
         description='Optional Nav2 params override. Leave empty to let the navigation launch select params by speed.'
     )
 
+    cmd_vel_timeout_arg = DeclareLaunchArgument(
+        'cmd_vel_timeout_sec',
+        default_value='0.5',
+        description='Publish zero velocity if navigation stops publishing cmd_vel for this many seconds'
+    )
+
+    cmd_vel_stop_period_arg = DeclareLaunchArgument(
+        'cmd_vel_stop_period_sec',
+        default_value='0.2',
+        description='Minimum interval between watchdog stop commands'
+    )
+
     system_manager_node = Node(
         package='jetson_node_pkg',
         executable='system_manager_node',
@@ -66,6 +78,8 @@ def generate_launch_description():
             'maps_dir': LaunchConfiguration('maps_dir'),
             'server_url': LaunchConfiguration('server_url'),
             'nav2_params_file': LaunchConfiguration('nav2_params_file'),
+            'cmd_vel_timeout_sec': LaunchConfiguration('cmd_vel_timeout_sec'),
+            'cmd_vel_stop_period_sec': LaunchConfiguration('cmd_vel_stop_period_sec'),
         }],
         output='screen',
     )
@@ -79,5 +93,7 @@ def generate_launch_description():
         maps_dir_arg,
         server_url_arg,
         nav2_params_file_arg,
+        cmd_vel_timeout_arg,
+        cmd_vel_stop_period_arg,
         system_manager_node,
     ])

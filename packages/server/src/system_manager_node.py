@@ -13,6 +13,11 @@ from std_srvs.srv import Trigger
 from jetson_interfaces.srv import StartNav
 
 try:
+    from geometry_msgs.msg import Twist
+except ImportError:
+    Twist = None
+
+try:
     from motion_msgs.msg import MotionCtrl
 except ImportError:
     MotionCtrl = None
@@ -97,6 +102,8 @@ class SystemManager(Node):
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
         self.declare_parameter('stand_nav_launch_file', 'stand_nav_launch.py')
         self.declare_parameter('nav2_params_file', '')
+        self.declare_parameter('cmd_vel_timeout_sec', 0.5)
+        self.declare_parameter('cmd_vel_stop_period_sec', 0.2)
         self.declare_parameter('server_url', 'http://182.43.86.126:4001')
 
         self.maps_dir = self.get_parameter('maps_dir').value
@@ -106,6 +113,13 @@ class SystemManager(Node):
         self.nav_launch_file = self.get_parameter('nav_launch_file').value
         self.stand_nav_launch_file = self.get_parameter('stand_nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
+        self.cmd_vel_timeout_sec = float(self.get_parameter('cmd_vel_timeout_sec').value)
+        self.cmd_vel_stop_period_sec = float(self.get_parameter('cmd_vel_stop_period_sec').value)
+
+        self.nav_motion_watchdog_active = False
+        self.nav_motion_stance = 'crouch'
+        self.nav_motion_last_cmd_time = None
+        self.nav_motion_last_stop_time = 0.0
 
         # Use hardcoded server URL from parameter
         self.server_url = self.get_parameter('server_url').value
@@ -116,6 +130,14 @@ class SystemManager(Node):
             self.motion_cmd_pub = self.create_publisher(MotionCtrl, '/diablo/MotionCmd', 10)
         else:
             self.get_logger().warn('motion_msgs.msg.MotionCtrl is unavailable; stop_all will not publish an explicit stop command')
+
+        self.cmd_vel_pub = None
+        if Twist is not None:
+            self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+            self.create_subscription(Twist, '/cmd_vel', self.handle_cmd_vel, 10)
+            self.create_timer(0.1, self.handle_motion_watchdog)
+        else:
+            self.get_logger().warn('geometry_msgs.msg.Twist is unavailable; navigation cmd_vel watchdog is disabled')
 
         os.makedirs(self.maps_dir, exist_ok=True)
 
@@ -166,6 +188,9 @@ class SystemManager(Node):
             self.current_process = None
             self.process_name = None
 
+        if process_name_to_kill == 'navigation':
+            self.disable_nav_motion_watchdog()
+
         # Also kill any orphaned processes by name
         if process_name_to_kill == 'slam':
             slam_patterns = [
@@ -186,14 +211,67 @@ class SystemManager(Node):
             subprocess.run(['pkill', '-f', 'robot_state_publisher'], capture_output=True)
             subprocess.run(['pkill', '-f', 'gz sim'], capture_output=True)
 
-    def publish_stop_motion(self):
+    def enable_nav_motion_watchdog(self, stance):
+        self.nav_motion_watchdog_active = True
+        self.nav_motion_stance = stance
+        self.nav_motion_last_cmd_time = time.monotonic()
+        self.nav_motion_last_stop_time = 0.0
+        self.get_logger().info(
+            f'Navigation cmd_vel watchdog enabled: timeout={self.cmd_vel_timeout_sec:.2f}s, stance={stance}'
+        )
+
+    def disable_nav_motion_watchdog(self):
+        if self.nav_motion_watchdog_active:
+            self.get_logger().info('Navigation cmd_vel watchdog disabled')
+        self.nav_motion_watchdog_active = False
+        self.nav_motion_last_cmd_time = None
+        self.nav_motion_last_stop_time = 0.0
+
+    def handle_cmd_vel(self, msg):
+        if self.nav_motion_watchdog_active:
+            self.nav_motion_last_cmd_time = time.monotonic()
+
+    def handle_motion_watchdog(self):
+        if not self.nav_motion_watchdog_active:
+            return
+
+        if self.current_process is None or self.current_process.poll() is not None:
+            self.disable_nav_motion_watchdog()
+            return
+
+        if self.nav_motion_last_cmd_time is None:
+            self.nav_motion_last_cmd_time = time.monotonic()
+            return
+
+        now = time.monotonic()
+        if now - self.nav_motion_last_cmd_time <= self.cmd_vel_timeout_sec:
+            return
+
+        if now - self.nav_motion_last_stop_time < self.cmd_vel_stop_period_sec:
+            return
+
+        self.nav_motion_last_stop_time = now
+        self.publish_zero_cmd_vel()
+        self.publish_stop_motion(self.nav_motion_stance, repeat=1)
+
+    def publish_zero_cmd_vel(self):
+        if self.cmd_vel_pub is None or Twist is None:
+            return
+
+        try:
+            self.cmd_vel_pub.publish(Twist())
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to publish zero cmd_vel: {exc}')
+
+    def publish_stop_motion(self, stance='crouch', repeat=3):
         if self.motion_cmd_pub is None or MotionCtrl is None:
             return
 
         try:
+            stand_mode = stance == 'stand'
             msg = MotionCtrl()
             msg.mode_mark = False
-            msg.mode.stand_mode = False
+            msg.mode.stand_mode = stand_mode
             msg.mode.pitch_ctrl_mode = False
             msg.mode.roll_ctrl_mode = False
             msg.mode.height_ctrl_mode = True
@@ -201,15 +279,16 @@ class SystemManager(Node):
             msg.mode.split_mode = False
             msg.value.forward = 0.0
             msg.value.left = 0.0
-            msg.value.up = 0.0
+            msg.value.up = 1.0 if stand_mode else 0.0
             msg.value.roll = 0.0
             msg.value.pitch = 0.0
             msg.value.leg_split = 0.0
 
             # Publish a few times to make the stop command more robust against transient loss.
-            for _ in range(3):
+            for index in range(repeat):
                 self.motion_cmd_pub.publish(msg)
-                time.sleep(0.05)
+                if index < repeat - 1:
+                    time.sleep(0.05)
         except Exception as exc:
             self.get_logger().warn(f'Failed to publish stop motion command: {exc}')
 
@@ -286,6 +365,7 @@ class SystemManager(Node):
 
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'navigation'
+            self.enable_nav_motion_watchdog(stance)
 
             self.get_logger().info(f'Started Navigation with PID: {self.current_process.pid}, stance: {stance}, speed: {speed}')
             response.success = True
@@ -298,9 +378,12 @@ class SystemManager(Node):
         return response
 
     def handle_stop_all(self, request, response):
-        self.publish_stop_motion()
+        stop_stance = self.nav_motion_stance if self.nav_motion_watchdog_active else 'crouch'
+        self.publish_zero_cmd_vel()
+        self.publish_stop_motion(stop_stance)
         self.kill_current_process()
-        self.publish_stop_motion()
+        self.publish_zero_cmd_vel()
+        self.publish_stop_motion(stop_stance)
         response.success = True
         response.message = 'All tasks stopped'
         return response
