@@ -267,8 +267,11 @@ function NavigationPanel({
     // 传递 Jetson 上的地图路径, 姿态和速度
     const mapYamlPath = `/home/nvidia/maps/${selectedMap}.yaml`;
     console.log('[StartNav] calling startNav with:', mapYamlPath, 'stance:', stance, 'speed:', speed);
-    await startNav(mapYamlPath, stance, speed);
-    setStarting(false);
+    try {
+      await startNav(mapYamlPath, stance, speed);
+    } finally {
+      setStarting(false);
+    }
   };
 
   const stopNavigation = async () => {
@@ -313,6 +316,12 @@ function NavigationPanel({
           </option>
         ))}
       </select>
+
+      {robotStatus.error && (
+        <div className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
+          {robotStatus.error}
+        </div>
+      )}
 
       {/* Stance selection - disabled during navigation */}
       <div className="space-y-1">
