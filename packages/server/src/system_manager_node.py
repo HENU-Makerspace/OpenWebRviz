@@ -96,7 +96,7 @@ class SystemManager(Node):
         self.declare_parameter('nav_package', 'jetson_node_pkg')
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
         self.declare_parameter('stand_nav_launch_file', 'stand_nav_launch.py')
-        self.declare_parameter('nav2_params_file', '/home/nvidia/ros2_ws/my_nav2_params.yaml')
+        self.declare_parameter('nav2_params_file', '')
         self.declare_parameter('server_url', 'http://182.43.86.126:4001')
 
         self.maps_dir = self.get_parameter('maps_dir').value
@@ -245,16 +245,16 @@ class SystemManager(Node):
             response.message = f'map file not found: {map_yaml_file}'
             return response
 
-        # Get stance from request (default to 'crouch')
-        stance = getattr(request, 'stance', 'crouch') or 'crouch'
-        # Get speed from request (default to 'high')
-        speed = getattr(request, 'speed', 'high') or 'high'
-
-        # 动态接收可选 nav2 参数文件
-        nav2_params_file = getattr(request, 'nav2_params_file', self.nav2_params_file)
-        if not os.path.exists(nav2_params_file):
+        stance = (getattr(request, 'stance', 'crouch') or 'crouch').strip().lower()
+        if stance not in {'stand', 'crouch'}:
             response.success = False
-            response.message = f'Nav2 params file not found: {nav2_params_file}'
+            response.message = f'Invalid stance: {stance}'
+            return response
+
+        speed = (getattr(request, 'speed', 'high') or 'high').strip().lower()
+        if speed not in {'high', 'medium', 'low'}:
+            response.success = False
+            response.message = f'Invalid speed: {speed}'
             return response
 
         # Select launch file based on stance
@@ -271,9 +271,17 @@ class SystemManager(Node):
                 self.nav_package,
                 nav_launch_file,
                 f'map:={map_yaml_file}',
-                f'params_file:={nav2_params_file}',
                 f'speed:={speed}',
             ]
+
+            nav2_params_file = str(self.nav2_params_file or '').strip()
+            if nav2_params_file:
+                if not os.path.exists(nav2_params_file):
+                    response.success = False
+                    response.message = f'Nav2 params file not found: {nav2_params_file}'
+                    return response
+                ros_args.append(f'params_file:={nav2_params_file}')
+
             cmd = self.build_ros_command(ros_args)
 
             self.current_process = subprocess.Popen(cmd, start_new_session=True)

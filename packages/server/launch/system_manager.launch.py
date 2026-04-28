@@ -47,6 +47,12 @@ def generate_launch_description():
         description='Server URL for map upload'
     )
 
+    nav2_params_file_arg = DeclareLaunchArgument(
+        'nav2_params_file',
+        default_value='',
+        description='Optional Nav2 params override. Leave empty to let the navigation launch select params by speed.'
+    )
+
     system_manager_node = Node(
         package='jetson_node_pkg',
         executable='system_manager_node',
@@ -59,6 +65,7 @@ def generate_launch_description():
             'stand_nav_launch_file': LaunchConfiguration('stand_nav_launch_file'),
             'maps_dir': LaunchConfiguration('maps_dir'),
             'server_url': LaunchConfiguration('server_url'),
+            'nav2_params_file': LaunchConfiguration('nav2_params_file'),
         }],
         output='screen',
     )
@@ -71,5 +78,6 @@ def generate_launch_description():
         stand_nav_launch_file_arg,
         maps_dir_arg,
         server_url_arg,
+        nav2_params_file_arg,
         system_manager_node,
     ])
