@@ -66,12 +66,12 @@ export function MapCanvas({
 
   const mapPaused = isPaused || !layers.map;
   const tfPaused = isPaused || !layers.tf;
-  const pathPaused = isPaused || (!layers.globalPlan && !layers.localPlan);
+  const pathPaused = isPaused || !layers.globalPlan;
   const scanPaused = isPaused || !layers.scan;
 
   const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused);
   const { robotPose: tfPose, resolvePoseInMap, tfVersion } = useRosTfTree(ros, tfPaused);
-  const { globalPath, localPath } = useRosPath(ros, '/plan', '/local_plan', pathPaused, pathResetToken);
+  const { globalPath } = useRosPath(ros, '/plan', pathPaused, pathResetToken);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
   const { scanData } = useRosScan(ros, '/scan', scanPaused);
@@ -285,23 +285,6 @@ export function MapCanvas({
       ctx.stroke();
     }
 
-    if (layers.localPlan && localPath && localPath.points.length > 0) {
-      ctx.strokeStyle = '#eab308';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-
-      localPath.points.forEach((point, index) => {
-        const screen = worldToScreen(point.x, point.y);
-        if (index === 0) {
-          ctx.moveTo(screen.x, screen.y);
-        } else {
-          ctx.lineTo(screen.x, screen.y);
-        }
-      });
-
-      ctx.stroke();
-    }
-
     if (mode === 'navigation' && navigationPoints.length > 0) {
       ctx.strokeStyle = navigationTaskMode === 'loop' ? '#f97316' : '#60a5fa';
       ctx.lineWidth = 2;
@@ -347,8 +330,6 @@ export function MapCanvas({
     displayMapData,
     globalPath,
     layers.globalPlan,
-    layers.localPlan,
-    localPath,
     mode,
     navigationPoints,
     navigationTaskMode,

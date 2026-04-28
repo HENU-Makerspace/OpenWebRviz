@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { MediaViewport } from './components/MediaViewport';
 import { MapCanvas } from './components/MapCanvas';
-import { ImageOverlay } from './components/ImageOverlay';
 import { LayerControl, LayerControlProvider, useLayers } from './components/LayerControl';
 import { DebugPanel } from './hooks/usePerformanceMonitor';
 import { useRosConnection } from './hooks/useRosConnection';
@@ -790,7 +789,6 @@ function AppContent() {
           <div className="absolute bottom-4 right-4 z-20 w-64 max-w-[calc(100%-2rem)] rounded-xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
             <LayerControl />
           </div>
-          <ImageOverlay ros={ros} hidden={media.videoConnected} />
         </main>
       </div>
 

@@ -14,20 +14,16 @@ export interface NavPath {
 export function useRosPath(
   ros: ROSLIB.Ros | null,
   globalPlanTopic: string = '/plan',
-  localPlanTopic: string = '/local_plan',
   paused: boolean = false,
   resetToken: number = 0,
 ) {
   const [globalPath, setGlobalPath] = useState<NavPath | null>(null);
-  const [localPath, setLocalPath] = useState<NavPath | null>(null);
   const rafRef = useRef<number | null>(null);
   const latestGlobalRef = useRef<NavPath | null>(null);
-  const latestLocalRef = useRef<NavPath | null>(null);
 
   useEffect(() => {
     if (!ros) {
       setGlobalPath(null);
-      setLocalPath(null);
       return;
     }
 
@@ -42,9 +38,6 @@ export function useRosPath(
       rafRef.current = null;
       if (latestGlobalRef.current) {
         setGlobalPath(latestGlobalRef.current);
-      }
-      if (latestLocalRef.current) {
-        setLocalPath(latestLocalRef.current);
       }
     };
 
@@ -78,44 +71,8 @@ export function useRosPath(
       scheduleFlush();
     });
 
-    // Subscribe to local plan
-    const localSub = new ROSLIB.Topic({
-      ros,
-      name: localPlanTopic,
-      messageType: 'nav_msgs/msg/Path',
-    });
-
-    localSub.subscribe((message: unknown) => {
-      if (paused) return;
-
-      const pathMsg = message as {
-        header: { stamp: { sec: number; nsec: number } };
-        poses: Array<{
-          pose: {
-            position: { x: number; y: number; z: number };
-            orientation: { x: number; y: number; z: number; w: number };
-          };
-        }>;
-      };
-
-      const points: PathPoint[] = pathMsg.poses.map(p => ({
-        x: p.pose.position.x,
-        y: p.pose.position.y,
-      }));
-
-      latestLocalRef.current = {
-        points,
-        timestamp: pathMsg.header.stamp.sec + pathMsg.header.stamp.nsec / 1e9,
-      };
-      scheduleFlush();
-    });
-
     (globalSub as any).on('error', (err: Error) => {
       console.error('[useRosPath] Global plan error:', err);
-    });
-
-    (localSub as any).on('error', (err: Error) => {
-      console.error('[useRosPath] Local plan error:', err);
     });
 
     return () => {
@@ -124,22 +81,17 @@ export function useRosPath(
         rafRef.current = null;
       }
       globalSub.unsubscribe();
-      localSub.unsubscribe();
       setGlobalPath(null);
-      setLocalPath(null);
     };
-  }, [ros, globalPlanTopic, localPlanTopic, paused]);
+  }, [ros, globalPlanTopic, paused]);
 
   useEffect(() => {
     latestGlobalRef.current = null;
-    latestLocalRef.current = null;
     setGlobalPath(null);
-    setLocalPath(null);
   }, [resetToken]);
 
   return {
     globalPath,
-    localPath,
   };
 }
 

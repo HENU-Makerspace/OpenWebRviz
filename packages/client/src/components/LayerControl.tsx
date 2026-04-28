@@ -4,8 +4,6 @@ interface LayerState {
   map: boolean;
   tf: boolean;
   globalPlan: boolean;
-  localPlan: boolean;
-  image: boolean;
   scan: boolean;
 }
 
@@ -39,8 +37,6 @@ export function LayerControlProvider({ children }: { children: React.ReactNode }
     map: true,
     tf: true,
     globalPlan: true,
-    localPlan: false,
-    image: false,
     scan: false,
   });
 
@@ -94,8 +90,6 @@ export function LayerControl() {
     { key: 'tf' as const, label: '机器人 (TF)', color: 'bg-green-500' },
     { key: 'scan' as const, label: '激光雷达', color: 'bg-cyan-500' },
     { key: 'globalPlan' as const, label: '全局路径', color: 'bg-purple-500' },
-    { key: 'localPlan' as const, label: '局部路径', color: 'bg-yellow-500' },
-    { key: 'image' as const, label: '相机图像', color: 'bg-pink-500' },
   ] as const;
 
   // Data Reception controls are intentionally hidden for the simplified operator UI.

@@ -6,6 +6,7 @@ export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'err
 
 const INITIAL_RECONNECT_DELAY_MS = 1000;
 const MAX_RECONNECT_DELAY_MS = 5000;
+const CONNECTION_TIMEOUT_MS = 10000;
 
 export function useRosConnection(wsUrl: string) {
   const [ros, setRos] = useState<ROSLIB.Ros | null>(null);
@@ -18,6 +19,24 @@ export function useRosConnection(wsUrl: string) {
   const reconnectAttemptRef = useRef(0);
   const shouldReconnectRef = useRef(true);
   const errorRef = useRef<string | null>(null);
+  const sessionIdRef = useRef(0);
+
+  const disposeRos = useCallback((instance?: ROSLIB.Ros | null) => {
+    const target = instance || rosRef.current;
+    if (!target) {
+      return;
+    }
+
+    try {
+      target.close();
+    } catch {
+      // Ignore socket shutdown errors during reconnect cleanup.
+    }
+
+    if (rosRef.current === target) {
+      rosRef.current = null;
+    }
+  }, []);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current != null) {
@@ -62,14 +81,17 @@ export function useRosConnection(wsUrl: string) {
       return;
     }
 
-    // Close existing connection
+    sessionIdRef.current += 1;
+    const sessionId = sessionIdRef.current;
+
     if (rosRef.current) {
-      rosRef.current.close();
+      const previousRos = rosRef.current;
       rosRef.current = null;
-      setRos(null);
+      disposeRos(previousRos);
     }
 
     try {
+      setRos(null);
       setConnectionState('connecting');
       setError(null);
       errorRef.current = null;
@@ -78,21 +100,27 @@ export function useRosConnection(wsUrl: string) {
         url: wsUrl,
       });
 
-      // Set up timeout (10 seconds)
-      const timeoutId = setTimeout(() => {
-        if (connectionStateRef.current === 'connecting') {
-          rosInstance.close();
-          rosRef.current = null;
-          setRos(null);
-          setConnectionState('error');
-          const message = 'Connection timeout. Is rosbridge_websocket running at ' + wsUrl + '?';
-          errorRef.current = message;
-          setError(message);
+      const timeoutId = window.setTimeout(() => {
+        if (sessionIdRef.current !== sessionId || connectionStateRef.current !== 'connecting') {
+          return;
         }
-      }, 10000);
+
+        const message = 'Connection timeout. Is rosbridge_websocket running at ' + wsUrl + '?';
+        errorRef.current = message;
+        setError(message);
+        setConnectionState('error');
+        disposeRos(rosInstance);
+        setRos(null);
+        scheduleReconnect(message);
+      }, CONNECTION_TIMEOUT_MS);
 
       rosInstance.on('connection', () => {
-        clearTimeout(timeoutId);
+        if (sessionIdRef.current !== sessionId) {
+          disposeRos(rosInstance);
+          return;
+        }
+
+        window.clearTimeout(timeoutId);
         console.log('Connected to ROS WebSocket server');
         reconnectAttemptRef.current = 0;
         rosRef.current = rosInstance;
@@ -103,31 +131,42 @@ export function useRosConnection(wsUrl: string) {
       });
 
       (rosInstance as any).on('error', (err: unknown) => {
-        clearTimeout(timeoutId);
+        if (sessionIdRef.current !== sessionId) {
+          return;
+        }
+
+        window.clearTimeout(timeoutId);
         console.error('ROS connection error:', err);
         const errorMessage = err instanceof Error ? err.message : 'Connection error';
         errorRef.current = errorMessage;
-        setConnectionState('error');
         setError(errorMessage);
+
+        if (connectionStateRef.current === 'connected') {
+          return;
+        }
+
+        setConnectionState('error');
+        setRos(null);
 
         if (shouldReconnectRef.current) {
           if (rosRef.current === rosInstance) {
             rosRef.current = null;
-            setRos(null);
           }
-          try {
-            rosInstance.close();
-          } catch {
-            // Ignore close errors and continue with scheduled reconnect.
-          }
+          disposeRos(rosInstance);
           scheduleReconnect(errorMessage);
         }
       });
 
       rosInstance.on('close', () => {
-        clearTimeout(timeoutId);
+        if (sessionIdRef.current !== sessionId) {
+          return;
+        }
+
+        window.clearTimeout(timeoutId);
         console.log('ROS WebSocket connection closed');
-        rosRef.current = null;
+        if (rosRef.current === rosInstance) {
+          rosRef.current = null;
+        }
         setRos(null);
 
         if (!shouldReconnectRef.current) {
@@ -138,9 +177,6 @@ export function useRosConnection(wsUrl: string) {
         setConnectionState('disconnected');
         scheduleReconnect(errorRef.current || 'ROS WebSocket connection closed');
       });
-
-      rosRef.current = rosInstance;
-      setRos(rosInstance);
     } catch (err) {
       console.error('Failed to create ROS connection:', err);
       const message = err instanceof Error ? err.message : 'Failed to connect';
@@ -162,18 +198,22 @@ export function useRosConnection(wsUrl: string) {
     clearReconnectTimer();
     setConnectionState('disconnected');
     setError(null);
-    errorRef.current = null;
-    if (rosRef.current) {
-      rosRef.current.close();
-      rosRef.current = null;
-    }
-    setRos(null);
-  }, [clearReconnectTimer]);
+      errorRef.current = null;
+      sessionIdRef.current += 1;
+      if (rosRef.current) {
+        disposeRos();
+      }
+      setRos(null);
+  }, [clearReconnectTimer, disposeRos]);
 
   const reconnect = useCallback(() => {
     reconnectAttemptRef.current = 0;
+    sessionIdRef.current += 1;
+    disposeRos();
+    setRos(null);
+    setConnectionState('disconnected');
     connect();
-  }, [connect]);
+  }, [connect, disposeRos]);
 
   // Auto-connect on mount and whenever wsUrl changes.
   useEffect(() => {
@@ -184,27 +224,23 @@ export function useRosConnection(wsUrl: string) {
 
     return () => {
       shouldReconnectRef.current = false;
+      sessionIdRef.current += 1;
       clearReconnectTimer();
-      if (rosRef.current) {
-        rosRef.current.close();
-        rosRef.current = null;
-      }
+      disposeRos();
       setRos(null);
     };
-  }, [clearReconnectTimer, connect, wsUrl]);
+  }, [clearReconnectTimer, connect, disposeRos, wsUrl]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       shouldReconnectRef.current = false;
+      sessionIdRef.current += 1;
       clearReconnectTimer();
-      if (rosRef.current) {
-        rosRef.current.close();
-        rosRef.current = null;
-      }
+      disposeRos();
       setRos(null);
     };
-  }, [clearReconnectTimer]);
+  }, [clearReconnectTimer, disposeRos]);
 
   return {
     ros,
