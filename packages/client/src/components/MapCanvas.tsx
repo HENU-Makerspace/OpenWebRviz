@@ -49,6 +49,7 @@ export function MapCanvas({
   const liveLayerRef = useRef<HTMLCanvasElement>(null);
   const interactionLayerRef = useRef<HTMLCanvasElement>(null);
   const mapRasterRef = useRef<HTMLCanvasElement | null>(null);
+  const ignoredNavMapRef = useRef<MapData | null>(null);
 
   const [view, setView] = useState<ViewState>({ scale: 50, offsetX: 0, offsetY: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -83,11 +84,24 @@ export function MapCanvas({
 
   useEffect(() => {
     if (mode !== 'navigation') {
+      ignoredNavMapRef.current = null;
+      return;
+    }
+
+    ignoredNavMapRef.current = mapData;
+    mapRasterRef.current = null;
+    setFrozenNavMap(null);
+    setDisplayMapData(null);
+  }, [mode, selectedMap]);
+
+  useEffect(() => {
+    if (mode !== 'navigation') {
       setFrozenNavMap(null);
       return;
     }
 
-    if (!frozenNavMap && mapData) {
+    if (!frozenNavMap && mapData && mapData !== ignoredNavMapRef.current) {
+      ignoredNavMapRef.current = null;
       setFrozenNavMap(mapData);
     }
   }, [mode, mapData, frozenNavMap]);
@@ -97,7 +111,7 @@ export function MapCanvas({
       return;
     }
 
-    if (mode === 'navigation' && frozenNavMap) {
+    if (mode === 'navigation') {
       setDisplayMapData(frozenNavMap);
     } else if (mapData) {
       setDisplayMapData(mapData);

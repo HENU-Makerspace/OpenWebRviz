@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { MediaViewport } from './components/MediaViewport';
 import { MapCanvas } from './components/MapCanvas';
@@ -612,6 +612,8 @@ function AppContent() {
   const { mode, setMode } = useMode();
   const [navClickMode, setNavClickMode] = useState<NavClickMode>('none');
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
+  const previousSelectedMapRef = useRef<string | null>(selectedMap);
+  const [mapSelectionResetToken, setMapSelectionResetToken] = useState(0);
   const [navigationTaskMode, setNavigationTaskMode] = useState<NavigationTaskMode>('single');
   const [patrolPoints, setPatrolPoints] = useState<NavigationPose[]>([]);
   const navigationTasks = useNavigationTasks(ros, isConnected, config?.navigation || null);
@@ -624,6 +626,18 @@ function AppContent() {
     up: config?.teleop?.up ?? 0.0,
     publishRateHz: config?.teleop?.publishRateHz ?? 25,
   }, isConnected && mode === 'teleop');
+
+  useEffect(() => {
+    if (previousSelectedMapRef.current === selectedMap) {
+      return;
+    }
+
+    previousSelectedMapRef.current = selectedMap;
+    setPatrolPoints([]);
+    setNavClickMode('none');
+    setMapSelectionResetToken((value) => value + 1);
+    navigationTasks.cancelCurrentTask();
+  }, [navigationTasks.cancelCurrentTask, selectedMap]);
 
   const addPatrolPoint = (pose: NavigationPose) => {
     setPatrolPoints((prev) => [...prev, pose]);
@@ -782,7 +796,7 @@ function AppContent() {
             selectedMap={selectedMap}
             navigationTaskMode={navigationTaskMode}
             navigationPoints={patrolPoints}
-            pathResetToken={navigationTasks.pathResetToken}
+            pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken}
             onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)}
             onWaypointAdded={addPatrolPoint}
           />
