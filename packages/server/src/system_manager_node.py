@@ -2,6 +2,7 @@
 import base64
 import os
 import signal
+import shlex
 import subprocess
 import time
 
@@ -126,6 +127,19 @@ class SystemManager(Node):
 
         self.get_logger().info('System Manager is ready.')
 
+    def build_ros_command(self, args):
+        quoted_args = ' '.join(shlex.quote(arg) for arg in args)
+        return [
+            '/bin/bash',
+            '-lc',
+            'set +u; '
+            'source /opt/ros/humble/setup.bash; '
+            'source ~/livox_ws/install/setup.bash >/dev/null 2>&1 || true; '
+            'source ~/ros2_ws/install/setup.bash >/dev/null 2>&1 || true; '
+            'set -u; '
+            f'exec {quoted_args}',
+        ]
+
     def kill_current_process(self):
         # Save process name for fallback kill
         process_name_to_kill = self.process_name
@@ -204,7 +218,7 @@ class SystemManager(Node):
         self.get_logger().info('Starting SLAM...')
 
         try:
-            cmd = ['ros2', 'launch', self.slam_package, self.slam_launch_file]
+            cmd = self.build_ros_command(['ros2', 'launch', self.slam_package, self.slam_launch_file])
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'slam'
 
@@ -252,7 +266,7 @@ class SystemManager(Node):
             self.get_logger().info(f'Starting Crouch Navigation with map: {map_yaml_file}, speed: {speed}')
 
         try:
-            cmd = [
+            ros_args = [
                 'ros2', 'launch',
                 self.nav_package,
                 nav_launch_file,
@@ -260,6 +274,7 @@ class SystemManager(Node):
                 f'params_file:={nav2_params_file}',
                 f'speed:={speed}',
             ]
+            cmd = self.build_ros_command(ros_args)
 
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'navigation'
@@ -288,14 +303,19 @@ class SystemManager(Node):
         map_path = os.path.join(self.maps_dir, map_name)
 
         try:
-            cmd = [
+            ros_args = [
                 'ros2', 'run', 'nav2_map_server', 'map_saver_cli',
                 '-f', map_path,
                 '--ros-args',
                 '-p', 'save_map_timeout:=10.0',
                 '-p', 'map_subscribe_transient_local:=true',
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                self.build_ros_command(ros_args),
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
             if result.returncode == 0:
                 yaml_path = f'{map_path}.yaml'
