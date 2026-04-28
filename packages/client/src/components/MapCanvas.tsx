@@ -50,6 +50,8 @@ export function MapCanvas({
   const interactionLayerRef = useRef<HTMLCanvasElement>(null);
   const mapRasterRef = useRef<HTMLCanvasElement | null>(null);
   const ignoredNavMapRef = useRef<MapData | null>(null);
+  const lastAutoFitKeyRef = useRef<string | null>(null);
+  const userAdjustedViewRef = useRef(false);
 
   const [view, setView] = useState<ViewState>({ scale: 50, offsetX: 0, offsetY: 0 });
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
@@ -81,6 +83,11 @@ export function MapCanvas({
   const [frozenNavMap, setFrozenNavMap] = useState<MapData | null>(null);
   const [displayMapData, setDisplayMapData] = useState<MapData | null>(null);
   const [displayPose, setDisplayPose] = useState<{ x: number; y: number; theta: number } | null>(null);
+
+  useEffect(() => {
+    lastAutoFitKeyRef.current = null;
+    userAdjustedViewRef.current = false;
+  }, [mode, selectedMap]);
 
   useEffect(() => {
     if (mode !== 'navigation') {
@@ -179,6 +186,53 @@ export function MapCanvas({
     window.addEventListener('resize', updateSize);
     return () => window.removeEventListener('resize', updateSize);
   }, []);
+
+  useEffect(() => {
+    if (!displayMapData || canvasSize.width <= 0 || canvasSize.height <= 0 || userAdjustedViewRef.current) {
+      return;
+    }
+
+    const { info } = displayMapData;
+    const fitKey = [
+      mode,
+      selectedMap || mapTopic,
+      info.width,
+      info.height,
+      info.resolution,
+      info.origin.position.x,
+      info.origin.position.y,
+    ].join(':');
+
+    if (lastAutoFitKeyRef.current === fitKey) {
+      return;
+    }
+
+    const padding = 48;
+    const mapWidthMeters = info.width * info.resolution;
+    const mapHeightMeters = info.height * info.resolution;
+
+    if (mapWidthMeters <= 0 || mapHeightMeters <= 0) {
+      return;
+    }
+
+    const availableWidth = Math.max(1, canvasSize.width - padding * 2);
+    const availableHeight = Math.max(1, canvasSize.height - padding * 2);
+    const fitScale = Math.max(
+      5,
+      Math.min(200, Math.min(availableWidth / mapWidthMeters, availableHeight / mapHeightMeters))
+    );
+    const drawWidth = mapWidthMeters * fitScale;
+    const drawHeight = mapHeightMeters * fitScale;
+    const drawX = (canvasSize.width - drawWidth) / 2;
+    const drawY = (canvasSize.height - drawHeight) / 2;
+
+    lastAutoFitKeyRef.current = fitKey;
+    setView({
+      scale: fitScale,
+      offsetX: drawX - info.origin.position.x * fitScale,
+      offsetY: drawY + (info.origin.position.y + mapHeightMeters) * fitScale,
+    });
+  }, [canvasSize.height, canvasSize.width, displayMapData, mapTopic, mode, selectedMap]);
 
   const worldToScreen = useCallback(
     (x: number, y: number) => ({
@@ -484,6 +538,7 @@ export function MapCanvas({
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
+    userAdjustedViewRef.current = true;
     const delta = e.deltaY > 0 ? 0.9 : 1.1;
 
     setView(prev => ({
@@ -566,6 +621,7 @@ export function MapCanvas({
       const startView = { ...view };
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
+        userAdjustedViewRef.current = true;
         setView(prev => ({
           ...prev,
           offsetX: startView.offsetX + (moveEvent.clientX - startX),
