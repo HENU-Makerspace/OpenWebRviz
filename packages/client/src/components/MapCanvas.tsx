@@ -28,6 +28,15 @@ interface ViewState {
   offsetY: number;
 }
 
+interface MapRaster {
+  canvas: HTMLCanvasElement;
+  width: number;
+  height: number;
+  resolution: number;
+  originX: number;
+  originY: number;
+}
+
 const MAX_SCAN_POINTS = 360;
 
 export function MapCanvas({
@@ -48,7 +57,7 @@ export function MapCanvas({
   const pathLayerRef = useRef<HTMLCanvasElement>(null);
   const liveLayerRef = useRef<HTMLCanvasElement>(null);
   const interactionLayerRef = useRef<HTMLCanvasElement>(null);
-  const mapRasterRef = useRef<HTMLCanvasElement | null>(null);
+  const mapRasterRef = useRef<MapRaster | null>(null);
   const ignoredNavMapRef = useRef<MapData | null>(null);
   const lastAutoFitKeyRef = useRef<string | null>(null);
   const userAdjustedViewRef = useRef(false);
@@ -135,9 +144,18 @@ export function MapCanvas({
       return;
     }
 
+    const rasterWidth = Math.max(0, Math.floor(displayMapData.info.width));
+    const rasterHeight = Math.max(0, Math.floor(displayMapData.info.height));
+
+    if (rasterWidth <= 0 || rasterHeight <= 0 || displayMapData.data.length < rasterWidth * rasterHeight) {
+      mapRasterRef.current = null;
+      return;
+    }
+
+    const { info } = displayMapData;
     const offscreen = document.createElement('canvas');
-    offscreen.width = displayMapData.info.width;
-    offscreen.height = displayMapData.info.height;
+    offscreen.width = rasterWidth;
+    offscreen.height = rasterHeight;
 
     const offscreenCtx = offscreen.getContext('2d');
     if (!offscreenCtx) {
@@ -148,12 +166,12 @@ export function MapCanvas({
     const image = offscreenCtx.createImageData(offscreen.width, offscreen.height);
     const pixels = image.data;
 
-    for (let i = 0; i < displayMapData.data.length; i++) {
+    for (let i = 0; i < rasterWidth * rasterHeight; i++) {
       const value = displayMapData.data[i];
-      const sourceX = i % offscreen.width;
-      const sourceY = Math.floor(i / offscreen.width);
-      const flippedY = offscreen.height - 1 - sourceY;
-      const offset = (flippedY * offscreen.width + sourceX) * 4;
+      const sourceX = i % rasterWidth;
+      const sourceY = Math.floor(i / rasterWidth);
+      const flippedY = rasterHeight - 1 - sourceY;
+      const offset = (flippedY * rasterWidth + sourceX) * 4;
 
       let channel = 176;
       if (value >= 65) {
@@ -169,22 +187,51 @@ export function MapCanvas({
     }
 
     offscreenCtx.putImageData(image, 0, 0);
-    mapRasterRef.current = offscreen;
+    mapRasterRef.current = {
+      canvas: offscreen,
+      width: rasterWidth,
+      height: rasterHeight,
+      resolution: info.resolution,
+      originX: info.origin.position.x,
+      originY: info.origin.position.y,
+    };
   }, [displayMapData]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateSize = () => {
       if (!containerRef.current) {
         return;
       }
 
-      const { clientWidth, clientHeight } = containerRef.current;
-      setCanvasSize({ width: clientWidth, height: clientHeight });
+      const rect = containerRef.current.getBoundingClientRect();
+      const nextWidth = Math.max(1, Math.round(rect.width));
+      const nextHeight = Math.max(1, Math.round(rect.height));
+
+      setCanvasSize((current) => {
+        if (current.width === nextWidth && current.height === nextHeight) {
+          return current;
+        }
+
+        return { width: nextWidth, height: nextHeight };
+      });
     };
 
     updateSize();
-    window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+
+    const observer = typeof ResizeObserver !== 'undefined' && containerRef.current
+      ? new ResizeObserver(updateSize)
+      : null;
+
+    if (observer && containerRef.current) {
+      observer.observe(containerRef.current);
+    } else {
+      window.addEventListener('resize', updateSize);
+    }
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', updateSize);
+    };
   }, []);
 
   useEffect(() => {
@@ -296,15 +343,22 @@ export function MapCanvas({
 
     if (layers.map) {
       const cachedMap = mapRasterRef.current;
-      if (cachedMap) {
-        const drawX = view.offsetX + info.origin.position.x * view.scale;
+      if (
+        cachedMap &&
+        cachedMap.width === info.width &&
+        cachedMap.height === info.height &&
+        cachedMap.resolution === info.resolution &&
+        cachedMap.originX === info.origin.position.x &&
+        cachedMap.originY === info.origin.position.y
+      ) {
+        const drawX = view.offsetX + cachedMap.originX * view.scale;
         const drawY =
-          view.offsetY - (info.origin.position.y + info.height * info.resolution) * view.scale;
-        const drawWidth = info.width * info.resolution * view.scale;
-        const drawHeight = info.height * info.resolution * view.scale;
+          view.offsetY - (cachedMap.originY + cachedMap.height * cachedMap.resolution) * view.scale;
+        const drawWidth = cachedMap.width * cachedMap.resolution * view.scale;
+        const drawHeight = cachedMap.height * cachedMap.resolution * view.scale;
 
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(cachedMap, drawX, drawY, drawWidth, drawHeight);
+        ctx.drawImage(cachedMap.canvas, drawX, drawY, drawWidth, drawHeight);
       }
 
       const origin = worldToScreen(info.origin.position.x, info.origin.position.y);
