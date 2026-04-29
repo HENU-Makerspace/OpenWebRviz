@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import * as ROSLIB from 'roslib';
 
 interface TeleopSettings {
@@ -25,14 +25,19 @@ export function useKeyboardTeleop(
   const motionCmdPubRef = useRef<any>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const publishTimerRef = useRef<number | null>(null);
+  const [standMode, setStandMode] = useState(settings.standMode);
 
-  const sendCommand = useCallback((linear: number, angular: number) => {
+  useEffect(() => {
+    setStandMode(settings.standMode);
+  }, [settings.standMode]);
+
+  const sendCommand = useCallback((linear: number, angular: number, nextStandMode = standMode) => {
     if (!motionCmdPubRef.current || !enabled) return;
 
     const msg = {
       mode_mark: false,
       mode: {
-        stand_mode: settings.standMode,
+        stand_mode: nextStandMode,
         pitch_ctrl_mode: false,
         roll_ctrl_mode: false,
         height_ctrl_mode: true,
@@ -42,7 +47,7 @@ export function useKeyboardTeleop(
       value: {
         forward: linear,
         left: angular,
-        up: settings.up,
+        up: nextStandMode ? 1.0 : 0.0,
         roll: 0.0,
         pitch: 0.0,
         leg_split: 0.0,
@@ -50,11 +55,18 @@ export function useKeyboardTeleop(
     };
 
     motionCmdPubRef.current.publish(msg);
-    console.log('[useKeyboardTeleop] Published /diablo/MotionCmd:', { linear, angular });
-  }, [enabled, settings.standMode, settings.up]);
+    console.log('[useKeyboardTeleop] Published /diablo/MotionCmd:', { linear, angular, standMode: nextStandMode });
+  }, [enabled, standMode]);
 
   const sendStop = useCallback(() => {
     sendCommand(0, 0);
+  }, [sendCommand]);
+
+  const sendStanceCommand = useCallback((nextStandMode: boolean) => {
+    setStandMode(nextStandMode);
+    for (let i = 0; i < 3; i += 1) {
+      window.setTimeout(() => sendCommand(0, 0, nextStandMode), i * 60);
+    }
   }, [sendCommand]);
 
   // Initialize publisher
@@ -138,6 +150,14 @@ export function useKeyboardTeleop(
         return;
       }
 
+      if (e.code === 'KeyZ') {
+        if (!e.repeat) {
+          e.preventDefault();
+          sendStanceCommand(!standMode);
+        }
+        return;
+      }
+
       if (!['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
         return;
       }
@@ -187,10 +207,14 @@ export function useKeyboardTeleop(
       stopPublishing();
       sendStop();
     };
-  }, [enabled, sendStop, startPublishing, stopPublishing]);
+  }, [enabled, sendStanceCommand, sendStop, standMode, startPublishing, stopPublishing]);
 
   return {
     isActive: enabled,
-    settings,
+    settings: {
+      ...settings,
+      standMode,
+      up: standMode ? 1.0 : 0.0,
+    },
   };
 }
