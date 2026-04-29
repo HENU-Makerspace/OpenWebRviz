@@ -66,6 +66,10 @@ function tfToPose2D(tf: TfTransform): Pose2D {
   };
 }
 
+function normalizeFrameId(frameId: string) {
+  return frameId.trim().replace(/^\/+/, '');
+}
+
 export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
   const [tfVersion, setTfVersion] = useState(0);
@@ -76,11 +80,13 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
   const makeKey = useCallback((parent: string, child: string) => `${parent}->${child}`, []);
 
   const resolvePoseInMap = useCallback((targetFrame: string): RobotPose | null => {
-    if (!targetFrame) {
+    const normalizedTargetFrame = normalizeFrameId(targetFrame);
+
+    if (!normalizedTargetFrame) {
       return null;
     }
 
-    if (targetFrame === 'map') {
+    if (normalizedTargetFrame === 'map') {
       return { x: 0, y: 0, theta: 0, frameId: 'map' };
     }
 
@@ -94,18 +100,18 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
 
     while (queue.length > 0) {
       const current = queue.shift()!;
-      if (current.frame === targetFrame) {
+      if (current.frame === normalizedTargetFrame) {
         return {
           x: current.pose.x,
           y: current.pose.y,
           theta: current.pose.theta,
-          frameId: `map->${targetFrame}`,
+          frameId: `map->${normalizedTargetFrame}`,
         };
       }
 
       for (const tf of cache.values()) {
-        const parent = tf.header.frame_id;
-        const child = tf.child_frame_id;
+        const parent = normalizeFrameId(tf.header.frame_id);
+        const child = normalizeFrameId(tf.child_frame_id);
         const edgePose = tfToPose2D(tf);
 
         if (parent === current.frame && !visited.has(child)) {
@@ -176,7 +182,10 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
       if (!tfMsg.transforms || tfMsg.transforms.length === 0) return;
 
       for (const tf of tfMsg.transforms) {
-        tfCacheRef.current.set(makeKey(tf.header.frame_id, tf.child_frame_id), tf);
+        tfCacheRef.current.set(
+          makeKey(normalizeFrameId(tf.header.frame_id), normalizeFrameId(tf.child_frame_id)),
+          tf
+        );
       }
 
       scheduleFlush();

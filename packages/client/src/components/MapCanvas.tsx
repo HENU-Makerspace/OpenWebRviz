@@ -424,36 +424,35 @@ export function MapCanvas({
 
     if (layers.scan && scanData) {
       ctx.fillStyle = '#38bdf8';
-      const sensorPose = resolvePoseInMap(scanData.frameId) || displayPose;
-      if (!sensorPose) {
-        return;
-      }
+      const sensorPose = scanData.frameId ? resolvePoseInMap(scanData.frameId) : displayPose;
 
-      const sensorYaw = sensorPose.theta;
-      const cosYaw = Math.cos(sensorYaw);
-      const sinYaw = Math.sin(sensorYaw);
-      const step = Math.max(1, Math.ceil(scanData.ranges.length / MAX_SCAN_POINTS));
+      if (sensorPose) {
+        const sensorYaw = sensorPose.theta;
+        const cosYaw = Math.cos(sensorYaw);
+        const sinYaw = Math.sin(sensorYaw);
+        const step = Math.max(1, Math.ceil(scanData.ranges.length / MAX_SCAN_POINTS));
 
-      for (let i = 0; i < scanData.ranges.length; i += step) {
-        const range = scanData.ranges[i];
-        if (!Number.isFinite(range) || range < scanData.rangeMin || range > scanData.rangeMax) {
-          continue;
+        for (let i = 0; i < scanData.ranges.length; i += step) {
+          const range = scanData.ranges[i];
+          if (!Number.isFinite(range) || range < scanData.rangeMin || range > scanData.rangeMax) {
+            continue;
+          }
+
+          const angle = scanData.angleMin + i * scanData.angleIncrement;
+          const localX = range * Math.cos(angle);
+          const localY = range * Math.sin(angle);
+          const worldX = sensorPose.x + cosYaw * localX - sinYaw * localY;
+          const worldY = sensorPose.y + sinYaw * localX + cosYaw * localY;
+          const screen = worldToScreen(worldX, worldY);
+
+          if (screen.x < 0 || screen.x >= width || screen.y < 0 || screen.y >= height) {
+            continue;
+          }
+
+          ctx.beginPath();
+          ctx.arc(screen.x, screen.y, 2, 0, Math.PI * 2);
+          ctx.fill();
         }
-
-        const angle = scanData.angleMin + i * scanData.angleIncrement;
-        const localX = range * Math.cos(angle);
-        const localY = range * Math.sin(angle);
-        const worldX = sensorPose.x + cosYaw * localX - sinYaw * localY;
-        const worldY = sensorPose.y + sinYaw * localX + cosYaw * localY;
-        const screen = worldToScreen(worldX, worldY);
-
-        if (screen.x < 0 || screen.x >= width || screen.y < 0 || screen.y >= height) {
-          continue;
-        }
-
-        ctx.beginPath();
-        ctx.arc(screen.x, screen.y, 2, 0, Math.PI * 2);
-        ctx.fill();
       }
     }
 

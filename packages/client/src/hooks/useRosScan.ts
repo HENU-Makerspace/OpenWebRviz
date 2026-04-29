@@ -11,6 +11,10 @@ export interface LaserScanData {
   frameId: string;
 }
 
+function normalizeFrameId(frameId: string | undefined) {
+  return (frameId || '').trim().replace(/^\/+/, '');
+}
+
 export function useRosScan(
   ros: ROSLIB.Ros | null,
   topicName: string = '/scan',
@@ -61,7 +65,7 @@ export function useRosScan(
         rangeMin: msg.range_min,
         rangeMax: msg.range_max,
         ranges: msg.ranges,
-        frameId: msg.header?.frame_id || '',
+        frameId: normalizeFrameId(msg.header?.frame_id),
       };
 
       if (rafRef.current == null) {
