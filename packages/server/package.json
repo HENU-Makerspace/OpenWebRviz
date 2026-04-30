@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "bun run dev:cloud",
+    "dev": "bun run dev:local",
     "dev:local": "ROBOT_CONFIG_PROFILE=local bun run --watch src/index.ts",
     "dev:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run --watch src/index.ts",
     "start": "bun run start:cloud",

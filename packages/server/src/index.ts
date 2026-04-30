@@ -40,7 +40,7 @@ const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port 
 const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
 const MEDIA_CONTROL_PROXY_HOST = config?.media?.control_proxy_host || '127.0.0.1';
 const MEDIA_CONTROL_PROXY_PORT = config?.media?.control_proxy_port || 19110;
-const FRONTEND_WS_URL = config?.frontend?.ws_url || process.env.FRONTEND_WS_URL || '';
+const FRONTEND_WS_URL = process.env.FRONTEND_WS_URL || config?.frontend?.ws_url || '';
 const FACE_PROXY_HOST = config?.face?.proxy_host || '127.0.0.1';
 const FACE_PROXY_PORT = config?.face?.proxy_port || 19100;
 const FACE_API_PATH = config?.face?.api_path || '/faces/latest';
@@ -332,6 +332,7 @@ app.get('/api/config', (c) => {
 
   return c.json({
     serverUrl: publicOrigin,
+    profile: configProfile,
     jetsonHost: JETSON_HOST,
     jetsonRosbridgePort: JETSON_ROSBRIDGE_PORT,
     rosbridgeUrl: publicWsOrigin,

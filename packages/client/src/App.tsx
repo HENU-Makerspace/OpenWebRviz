@@ -17,6 +17,7 @@ import type { NavigationPose, NavigationTaskMode, NavigationTaskStatus } from '.
 
 interface ServerConfig {
   serverUrl: string;
+  profile?: string;
   jetsonHost: string;
   jetsonRosbridgePort: number;
   rosbridgeUrl: string;
@@ -73,14 +74,24 @@ function RosbridgePanel({
   isConnected,
   reconnect,
   disconnect,
+  profile,
+  rosbridgeUrl,
 }: {
   isConnected: boolean;
   reconnect: () => void;
   disconnect: () => void;
+  profile?: string;
+  rosbridgeUrl?: string;
 }) {
   return (
     <div className="space-y-2">
       <h3 className="text-sm font-medium text-gray-500">Rosbridge</h3>
+      <div className="space-y-1 rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-500">
+        <div>连接模式：{profile || 'unknown'}</div>
+        <div className="truncate font-mono" title={rosbridgeUrl || ''}>
+          {rosbridgeUrl || '未配置'}
+        </div>
+      </div>
 
       {!isConnected ? (
         <button
@@ -735,6 +746,8 @@ function AppContent() {
             isConnected={isConnected}
             reconnect={reconnect}
             disconnect={disconnect}
+            profile={config?.profile}
+            rosbridgeUrl={wsUrl}
           />
           {mode === 'teleop' ? (
             <MappingPanel ros={ros} isConnected={isConnected} />

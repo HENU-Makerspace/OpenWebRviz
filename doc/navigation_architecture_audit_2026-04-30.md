@@ -9,7 +9,11 @@
 - Livox 工作区：`/home/nvidia/livox_ws`
 - 前端/后端仓库：`/home/c6h4o2/dev/web/ROS`
 
-本次只做检查和方案规划，没有在 Jetson 上直接改导航配置。审计时没有主动启动导航或 SLAM，避免机器人移动。
+状态说明：
+
+- 22:44 完成第一步：对齐 FastLIO2 frame 配置说明。
+- 23:47 完成第二步：引入 `base_footprint`，并把 SLAM/Nav2/AMCL 的导航基准切到平面底盘 frame。
+- 本文前半部分记录“当前 Jetson 真实配置”；后半部分保留早期审计发现，作为后续清理背景。
 
 ## 0. 已执行变更
 
@@ -47,6 +51,194 @@
 - source 与 install 两处 `mid360.yaml` 内容一致。
 - YAML 可解析，`common.map_frame=camera_init`，`common.body_frame=body`。
 - 修改时 Jetson 上没有运行 `fastlio_mapping`、`livox_ros_driver2_node`、`pointcloud_to_laserscan`、`slam_toolbox`、`amcl`、Nav2 相关子进程。
+
+### 2026-04-30 23:47，第二步：引入 `base_footprint`
+
+目标：
+
+- Nav2、AMCL、slam_toolbox 不再直接使用带高度和 roll/pitch 的 `base_link`。
+- 双足轮式机器人站立/蹲下产生的倾斜只保留在 `base_footprint -> base_link`，不污染 2D 导航。
+- 保留当前已经能跑通的 FastLIO2 输出 frame：`camera_init -> body`，暂不大改成标准 `odom`，降低一次性改动风险。
+
+新增节点：
+
+```text
+/home/nvidia/ros2_ws/src/jetson_node_pkg/jetson_node_pkg/base_footprint_projector.py
+```
+
+节点职责：
+
+1. 订阅 FastLIO2 的 `/Odometry`。
+2. 按当前已知外参计算 `camera_init -> base_link`：
+   - FastLIO2 `/Odometry` 表示 `camera_init -> body`。
+   - 原先静态 `body -> base_link` 为 `x=0.05, y=0, z=-0.25/-0.35, yaw=180 deg`。
+3. 将完整 `base_link` 位姿分解为：
+   - `camera_init -> base_footprint`：只包含 x/y/yaw，z=0，roll/pitch=0。
+   - `base_footprint -> base_link`：只包含高度和剩余 roll/pitch。
+
+当前主链路 TF：
+
+```text
+map
+└── camera_init
+    ├── body                  # FastLIO2 内部/IMU 机身 frame
+    └── base_footprint        # Nav2/AMCL/slam_toolbox 使用的 2D 底盘 frame
+        └── base_link         # 带高度和倾斜的机身/传感器安装基准
+            └── camera_link
+```
+
+注意：这一阶段仍使用 `camera_init` 作为 odom frame。后续是否统一重命名为标准 `odom`，应单独做一步，不能和 `base_footprint` 混在一起改。
+
+修改文件：
+
+```text
+/home/nvidia/ros2_ws/src/jetson_node_pkg/setup.py
+/home/nvidia/ros2_ws/src/jetson_node_pkg/package.xml
+/home/nvidia/ros2_ws/src/jetson_node_pkg/jetson_node_pkg/base_footprint_projector.py
+/home/nvidia/ros2_ws/src/jetson_node_pkg/launch/nav_all.launch.py
+/home/nvidia/ros2_ws/src/jetson_node_pkg/launch/stand_nav_launch.py
+/home/nvidia/ros2_ws/src/jetson_node_pkg/launch/mapping_all.launch.py
+/home/nvidia/ros2_ws/my_slam.yaml
+/home/nvidia/ros2_ws/my_nav2_params.yaml
+/home/nvidia/ros2_ws/my_nav2_params_medium.yaml
+/home/nvidia/ros2_ws/my_nav2_params_low.yaml
+/home/nvidia/ros2_ws/stand_nav2_params.yaml
+/home/nvidia/ros2_ws/stand_nav2_params_high.yaml
+/home/nvidia/ros2_ws/stand_nav2_params_medium.yaml
+/home/nvidia/ros2_ws/stand_nav2_params_low.yaml
+```
+
+关键配置从：
+
+```yaml
+base_frame: base_link
+base_frame_id: "base_link"
+robot_base_frame: base_link
+```
+
+改为：
+
+```yaml
+base_frame: base_footprint
+base_frame_id: "base_footprint"
+robot_base_frame: base_footprint
+```
+
+主 launch 从“静态发布 `body -> base_link`”改为“由 `base_footprint_projector` 动态发布”：
+
+```text
+nav_all.launch.py:
+  camera_init -> base_footprint -> base_link
+  base_link_z = -0.25
+
+stand_nav_launch.py:
+  camera_init -> base_footprint -> base_link
+  base_link_z = -0.35
+
+mapping_all.launch.py:
+  camera_init -> base_footprint -> base_link
+  base_link_z = -0.25
+```
+
+仍保留：
+
+```text
+base_link -> camera_link
+pointcloud_to_laserscan target_frame = base_link
+```
+
+这样 `/scan` 仍按真实传感器/机身链路生成，而 Nav2/AMCL/slam_toolbox 用平面 `base_footprint` 做 2D 位姿。
+
+构建验证：
+
+```bash
+export ROS_DOMAIN_ID=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+source /opt/ros/humble/setup.bash
+cd /home/nvidia/ros2_ws
+colcon build --symlink-install --packages-select jetson_node_pkg
+```
+
+结果：
+
+```text
+Summary: 1 package finished
+```
+
+实测验证：
+
+- `ros2 launch jetson_node_pkg nav_all.launch.py --show-args` 通过。
+- `ros2 launch jetson_node_pkg stand_nav_launch.py --show-args` 通过。
+- `ros2 launch jetson_node_pkg mapping_all.launch.py --show-args` 通过。
+- 手动启动 `mapping_all.launch.py` 后，日志中只剩 `base_link_to_camera_link` 静态 TF，不再启动 `body_to_base_link`。
+- `base_footprint_projector` 正常启动：
+
+```text
+Publishing planar TF camera_init -> base_footprint and tilted TF base_footprint -> base_link from /Odometry with body->base_link offset (0.05, 0.0, -0.25)
+```
+
+TF 实测：
+
+```text
+camera_init -> base_footprint:
+  z = 0
+  roll/pitch = 0
+  yaw ~= +/-180 deg
+
+base_footprint -> base_link:
+  x/y = 0
+  z ~= -0.32 m 实测随姿态轻微变化
+  roll/pitch ~= 1 deg 以内
+  yaw ~= 0
+```
+
+频率实测：
+
+```text
+/scan     ~= 10 Hz
+/Odometry ~= 10 Hz
+```
+
+slam_toolbox 实测参数：
+
+```text
+base_frame = base_footprint
+odom_frame = camera_init
+map_frame  = map
+```
+
+新拓扑启动后的最新日志未再出现：
+
+```text
+Failed to compute odom pose
+Timed out waiting for transform
+Invalid frame
+Lookup would require extrapolation
+```
+
+备份文件：
+
+```text
+/home/nvidia/ros2_ws/install/fast_lio/share/fast_lio/config/mid360.yaml.bak_step1_20260430_224427
+/home/nvidia/ros2_ws/src/FAST_LIO/config/mid360.yaml.bak_step1_20260430_224427
+/home/nvidia/ros2_ws/my_nav2_params.yaml.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/my_nav2_params_low.yaml.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/my_nav2_params_medium.yaml.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/my_slam.yaml.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/src/jetson_node_pkg/launch/mapping_all.launch.py.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/src/jetson_node_pkg/launch/nav_all.launch.py.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/src/jetson_node_pkg/launch/stand_nav_launch.py.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/src/jetson_node_pkg/setup.py.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/stand_nav2_params_high.yaml.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/stand_nav2_params_low.yaml.bak_base_footprint_20260430_230938
+/home/nvidia/ros2_ws/stand_nav2_params_medium.yaml.bak_base_footprint_20260430_230938
+```
+
+遗留风险：
+
+- 旧 launch 文件 `mapping_nav_launch.py`、`stand_down_nav_launch.py` 仍有历史 `base_link` 配置。从当前 `system_manager_node.py` 入口看主流程不用它们，后续应单独删除或统一改造。
+- 当前仍使用 `camera_init` 作为 odom frame，这是为了兼容 FastLIO2 源码硬编码输出。标准化为 `odom` 是下一步，不应和本次改动混合。
+- `/scan` 的 frame 仍为 `base_link`，这是有意保留。只要 TF 中 `base_footprint -> base_link` 稳定，slam_toolbox/AMCL 可以把 scan 转到 `base_footprint`。
 
 ## 1. 当前启动链路
 
