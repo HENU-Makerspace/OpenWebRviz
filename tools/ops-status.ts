@@ -29,6 +29,15 @@ interface MediaStatus {
   } | null;
 }
 
+interface SettingsPayload {
+  media?: {
+    videoDevice?: string;
+  };
+  face?: {
+    videoDevice?: string;
+  };
+}
+
 const { config, profile: configProfile, configPath } = loadRobotConfig(`${process.cwd()}/packages/server/config`);
 const CLOUD_HOST = String(config.server?.host || '182.43.86.126');
 const JETSON_HOST = String(config.jetson?.host || '192.168.43.100');
@@ -75,6 +84,10 @@ async function runSSH(target: string, script: string) {
 
 function isLocalHost(host: string) {
   return host === '127.0.0.1' || host === 'localhost';
+}
+
+function shellSingleQuote(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 async function runRemoteShell(host: string, userAtHost: string, script: string) {
@@ -139,7 +152,12 @@ printf 'port_19110=%s\n' "$(ss -ltnp | grep -q ':19110 ' && echo yes || echo no)
 }
 
 async function probeJetson() {
+  const settings = await fetchJson<SettingsPayload>(`http://${CLOUD_HOST}/api/settings`);
+  const configuredVideoDevice = settings?.media?.videoDevice || '/dev/video0';
+  const configuredFaceDevice = settings?.face?.videoDevice || configuredVideoDevice;
   const remote = await runRemoteShell(JETSON_HOST, `nvidia@${JETSON_HOST}`, `
+VIDEO_DEVICE=${shellSingleQuote(configuredVideoDevice)}
+FACE_DEVICE=${shellSingleQuote(configuredFaceDevice)}
 printf 'media=%s\n' "$(systemctl --user is-active webbot-media.service 2>/dev/null || true)"
 printf 'video=%s\n' "$(systemctl --user is-active webbot-video.service 2>/dev/null || true)"
 printf 'control=%s\n' "$(systemctl --user is-active webbot-media-control.service 2>/dev/null || true)"
@@ -151,7 +169,7 @@ printf 'janus_proc=%s\n' "$(pgrep -f '/opt/janus/bin/janus' >/dev/null && echo y
 printf 'demo_proc=%s\n' "$(pgrep -f 'python3 -m http.server 8000' >/dev/null && echo yes || echo no)"
 printf 'audio_capture_proc=%s\n' "$(pgrep -f 'gst-launch-1.0 -v alsasrc' >/dev/null && echo yes || echo no)"
 printf 'audio_playback_proc=%s\n' "$(pgrep -f 'gst-launch-1.0 -v udpsrc port=5006' >/dev/null && echo yes || echo no)"
-printf 'video_proc=%s\n' "$(pgrep -f 'gst-launch-1.0 v4l2src device=/dev/video0' >/dev/null && echo yes || echo no)"
+printf 'video_proc=%s\n' "$(pgrep -f "gst-launch-1.0.*v4l2src device=${'$'}VIDEO_DEVICE" >/dev/null && echo yes || echo no)"
 printf 'port_9090=%s\n' "$(ss -ltnup | grep -q ':9090' && echo yes || echo no)"
 printf 'port_8088=%s\n' "$(ss -ltnup | grep -q ':8088' && echo yes || echo no)"
 printf 'port_8000=%s\n' "$(ss -ltnup | grep -q ':8000' && echo yes || echo no)"
@@ -162,7 +180,9 @@ printf 'port_5006=%s\n' "$(ss -ltnup | grep -q ':5006' && echo yes || echo no)"
 printf 'audio_capture_dev=%s\n' "$(arecord -l 2>/dev/null | grep -q 'UACDemoV10' && echo yes || echo no)"
 printf 'audio_playback_dev=%s\n' "$(aplay -l 2>/dev/null | grep -q 'UACDemoV10' && echo yes || echo no)"
 printf 'frame_count=%s\n' "$(find ~/.local/state/webbot-media/frames -maxdepth 1 -name 'frame-*.jpg' 2>/dev/null | wc -l | tr -d ' ')"
-printf 'video0_exists=%s\n' "$(test -e /dev/video0 && echo yes || echo no)"
+printf 'configured_video_device=%s\n' "${'$'}VIDEO_DEVICE"
+printf 'configured_face_device=%s\n' "${'$'}FACE_DEVICE"
+printf 'configured_video_exists=%s\n' "$(test -e "${'$'}VIDEO_DEVICE" && echo yes || echo no)"
 curl -sS http://127.0.0.1:19100/health | sed 's/^/face_health_json=/'
 `);
 
@@ -206,7 +226,8 @@ function render(cloud: Awaited<ReturnType<typeof probeCloud>>, jetson: Awaited<R
       `boot: linger=${jetson.metrics.linger === 'yes' ? color('yes', 32) : color(jetson.metrics.linger || 'no', 31)}`,
       `procs: janus=${ok(jetson.metrics.janus_proc === 'yes')} demo=${ok(jetson.metrics.demo_proc === 'yes')} audio-capture=${ok(jetson.metrics.audio_capture_proc === 'yes')} audio-playback=${ok(jetson.metrics.audio_playback_proc === 'yes')} video=${idleAware(jetson.metrics.video === 'active')}`,
       `ports: 9090=${ok(jetson.metrics.port_9090 === 'yes')} 8088=${ok(jetson.metrics.port_8088 === 'yes')} 8000=${ok(jetson.metrics.port_8000 === 'yes')} 19100=${ok(jetson.metrics.port_19100 === 'yes')} 19110=${ok(jetson.metrics.port_19110 === 'yes')} 5005=${ok(jetson.metrics.port_5005 === 'yes')} 5006=${ok(jetson.metrics.port_5006 === 'yes')}`,
-      `devices: mic=${ok(jetson.metrics.audio_capture_dev === 'yes')} spk=${ok(jetson.metrics.audio_playback_dev === 'yes')} video0=${ok(jetson.metrics.video0_exists === 'yes')} frames=${jetson.metrics.frame_count ?? '0'}`,
+      `devices: mic=${ok(jetson.metrics.audio_capture_dev === 'yes')} spk=${ok(jetson.metrics.audio_playback_dev === 'yes')} video=${ok(jetson.metrics.configured_video_exists === 'yes')} frames=${jetson.metrics.frame_count ?? '0'}`,
+      `camera: video=${jetson.metrics.configured_video_device || 'n/a'} face=${jetson.metrics.configured_face_device || 'n/a'}`,
       `face: online=${jetson.metrics.video === 'active' ? ok(jetson.faceHealth?.online === true) : color('idle', 33)} identities=${jetson.faceHealth?.identitiesLoaded ?? 'n/a'} age=${fmtAge(jetson.faceHealth?.updatedAt)} error=${jetson.faceHealth?.lastError || '-'}`,
     ]),
     '',

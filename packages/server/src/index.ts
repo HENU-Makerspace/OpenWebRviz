@@ -191,6 +191,7 @@ VIDEO_WIDTH=${shellQuote(String(asNumber(media.video_width, 1280)))}
 VIDEO_HEIGHT=${shellQuote(String(asNumber(media.video_height, 720)))}
 VIDEO_FRAMERATE=${shellQuote(asString(media.video_framerate, '30/1'))}
 VIDEO_BITRATE=${shellQuote(String(asNumber(media.video_bitrate, 4000)))}
+VIDEO_FORMAT=${shellQuote(asString(media.video_format, ''))}
 `;
 }
 
@@ -719,9 +720,8 @@ app.post('/api/settings/apply-jetson', async (c) => {
       `printf "MEDIA_WAS_ACTIVE=%s\\nMEDIA_CONTROL_WAS_ACTIVE=%s\\nFACE_WAS_ACTIVE=%s\\nVIDEO_WAS_ACTIVE=%s\\n" "$MEDIA_WAS_ACTIVE" "$MEDIA_CONTROL_WAS_ACTIVE" "$FACE_WAS_ACTIVE" "$VIDEO_WAS_ACTIVE" > ${shellQuote(restartStateFile)}`,
       `chmod +x ${shellQuote(mediaScriptPath)} ${shellQuote(videoScriptPath)} ${shellQuote(mediaControlScriptPath)} ${shellQuote(faceScriptPath)}`,
       'systemctl --user daemon-reload',
-      `systemctl --user restart ${shellQuote(mediaServiceName)} ${shellQuote(mediaControlServiceName)}`,
+      `systemctl --user restart ${shellQuote(mediaServiceName)} ${shellQuote(mediaControlServiceName)} ${shellQuote(faceServiceName)}`,
       `if [ -f ${shellQuote(restartStateFile)} ]; then . ${shellQuote(restartStateFile)}; fi`,
-      `if [ "${'$'}{FACE_WAS_ACTIVE:-0}" = "1" ]; then systemctl --user restart ${shellQuote(faceServiceName)}; fi`,
       `if [ "${'$'}{VIDEO_WAS_ACTIVE:-0}" = "1" ]; then systemctl --user restart ${shellQuote(videoServiceName)}; fi`,
       `rm -f ${shellQuote(restartStateFile)}`,
     ].join(' && ');

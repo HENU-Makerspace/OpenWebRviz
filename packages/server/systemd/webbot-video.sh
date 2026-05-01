@@ -9,6 +9,7 @@ VIDEO_FRAMERATE="30/1"
 VIDEO_BITRATE="4000"
 VIDEO_FACE_FRAME_RATE="6/1"
 VIDEO_ENV_FILE="${HOME}/.config/webbot/video.env"
+VIDEO_FORMAT=""
 
 if [[ -f "${VIDEO_ENV_FILE}" ]]; then
   # shellcheck disable=SC1090
@@ -24,6 +25,73 @@ mkdir -p "${FRAME_DIR}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "${LOG_FILE}" >&2
+}
+
+resolve_video_format() {
+  if [[ -n "${VIDEO_FORMAT}" ]]; then
+    printf '%s\n' "${VIDEO_FORMAT}"
+    return 0
+  fi
+
+  if ! command -v v4l2-ctl >/dev/null 2>&1; then
+    printf 'mjpeg\n'
+    return 0
+  fi
+
+  local formats
+  formats="$(v4l2-ctl --device="${VIDEO_DEVICE}" --list-formats-ext 2>/dev/null || true)"
+  if grep -Fq "'MJPG'" <<<"${formats}"; then
+    printf 'mjpeg\n'
+    return 0
+  fi
+  if grep -Fq "'YUYV'" <<<"${formats}"; then
+    printf 'yuyv\n'
+    return 0
+  fi
+
+  printf 'mjpeg\n'
+}
+
+run_video_pipeline() {
+  local format="$1"
+
+  case "${format}" in
+    mjpeg)
+      log "Using MJPEG capture pipeline"
+      exec gst-launch-1.0 \
+        v4l2src device="${VIDEO_DEVICE}" do-timestamp=true ! \
+        image/jpeg,width="${VIDEO_WIDTH}",height="${VIDEO_HEIGHT}",framerate="${VIDEO_FRAMERATE}" ! \
+        jpegdec ! \
+        nvvideoconvert ! \
+        tee name=t \
+          t. ! queue ! video/x-raw,format=I420 ! \
+            x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast ! \
+            rtph264pay config-interval=1 pt=96 ! \
+            udpsink host=127.0.0.1 port="${VIDEO_PORT}" \
+          t. ! queue ! \
+            videorate ! video/x-raw,framerate="${VIDEO_FACE_FRAME_RATE}" ! \
+            jpegenc ! multifilesink location="${FRAME_DIR}/frame-%05d.jpg" max-files=4
+      ;;
+    yuyv)
+      log "Using YUYV capture pipeline"
+      exec gst-launch-1.0 \
+        v4l2src device="${VIDEO_DEVICE}" do-timestamp=true ! \
+        video/x-raw,format=YUY2,width="${VIDEO_WIDTH}",height="${VIDEO_HEIGHT}",framerate="${VIDEO_FRAMERATE}" ! \
+        videoconvert ! \
+        tee name=t \
+          t. ! queue ! video/x-raw,format=I420 ! \
+            x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast ! \
+            rtph264pay config-interval=1 pt=96 ! \
+            udpsink host=127.0.0.1 port="${VIDEO_PORT}" \
+          t. ! queue ! \
+            videorate ! video/x-raw,framerate="${VIDEO_FACE_FRAME_RATE}" ! \
+            jpegenc ! multifilesink location="${FRAME_DIR}/frame-%05d.jpg" max-files=4
+      ;;
+    *)
+      log "Unsupported VIDEO_FORMAT=${format} for ${VIDEO_DEVICE}"
+      exit 1
+      ;;
+  esac
 }
 
 cleanup_video_processes() {
@@ -62,18 +130,6 @@ if ! wait_for_video_device; then
 fi
 
 : >"${LOG_FILE}"
-log "Starting video pipeline on ${VIDEO_DEVICE}"
-
-exec gst-launch-1.0 \
-  v4l2src device="${VIDEO_DEVICE}" do-timestamp=true ! \
-  image/jpeg,width="${VIDEO_WIDTH}",height="${VIDEO_HEIGHT}",framerate="${VIDEO_FRAMERATE}" ! \
-  jpegdec ! \
-  nvvideoconvert ! \
-  tee name=t \
-    t. ! queue ! video/x-raw,format=I420 ! \
-      x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast ! \
-      rtph264pay config-interval=1 pt=96 ! \
-      udpsink host=127.0.0.1 port="${VIDEO_PORT}" \
-    t. ! queue ! \
-      videorate ! video/x-raw,framerate="${VIDEO_FACE_FRAME_RATE}" ! \
-      jpegenc ! multifilesink location="${FRAME_DIR}/frame-%05d.jpg" max-files=4
+resolved_format="$(resolve_video_format)"
+log "Starting video pipeline on ${VIDEO_DEVICE} with format ${resolved_format}"
+run_video_pipeline "${resolved_format}"
