@@ -45,6 +45,15 @@ def yaw_quaternion(yaw):
     return (0.0, 0.0, math.sin(yaw / 2.0), math.cos(yaw / 2.0))
 
 
+def rotate_xy(yaw, x, y):
+    cos_yaw = math.cos(yaw)
+    sin_yaw = math.sin(yaw)
+    return (
+        cos_yaw * x - sin_yaw * y,
+        sin_yaw * x + cos_yaw * y,
+    )
+
+
 def rotate_vector(q, v):
     qv = (v[0], v[1], v[2], 0.0)
     rotated = quaternion_multiply(quaternion_multiply(q, qv), quaternion_inverse(q))
@@ -92,16 +101,18 @@ class BaseFootprintProjector(Node):
         ))
         body_to_base_q = (0.0, 0.0, 1.0, 0.0)
         base_q = normalize_quaternion(quaternion_multiply(body_q, body_to_base_q))
+        body_yaw = yaw_from_quaternion_tuple(body_q)
         base_yaw = yaw_from_quaternion_tuple(base_q)
         footprint_q = yaw_quaternion(base_yaw)
 
-        base_offset = rotate_vector(
+        base_offset_world = rotate_vector(
             body_q,
             (self.body_to_base_x, self.body_to_base_y, self.base_link_z),
         )
-        base_x = pose.position.x + base_offset[0]
-        base_y = pose.position.y + base_offset[1]
-        base_z = pose.position.z + base_offset[2]
+        footprint_offset_xy = rotate_xy(body_yaw, self.body_to_base_x, self.body_to_base_y)
+        base_x = pose.position.x + footprint_offset_xy[0]
+        base_y = pose.position.y + footprint_offset_xy[1]
+        base_z = pose.position.z + base_offset_world[2]
         relative_q = normalize_quaternion(
             quaternion_multiply(quaternion_inverse(footprint_q), base_q)
         )

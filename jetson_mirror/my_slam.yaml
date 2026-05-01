@@ -10,7 +10,7 @@ slam_toolbox:
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
 
-    odom_frame: camera_init
+    odom_frame: odom
     map_frame: map
     base_frame: base_footprint
     scan_topic: /scan

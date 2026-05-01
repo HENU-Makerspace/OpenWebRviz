@@ -3,6 +3,7 @@ import { ConnectionStatus } from './components/ConnectionStatus';
 import { MediaViewport } from './components/MediaViewport';
 import { MapCanvas } from './components/MapCanvas';
 import { LayerControl, LayerControlProvider, useLayers } from './components/LayerControl';
+import { RobotSettingsPanel } from './components/RobotSettingsPanel';
 import { DebugPanel } from './hooks/usePerformanceMonitor';
 import { useRosConnection } from './hooks/useRosConnection';
 import { useRobotMedia } from './hooks/useRobotMedia';
@@ -615,6 +616,7 @@ function NavigationPanel({
 
 function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const config = useServerConfig();
   const media = useRobotMedia(config?.media || null);
   const face = useFaceRecognition(config?.face || null, media.videoConnected);
@@ -730,6 +732,12 @@ function AppContent() {
             className="text-xs text-gray-400 hover:text-gray-600"
           >
             {showDebug ? '隐藏调试' : '显示调试'}
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="rounded bg-slate-100 px-3 py-1 text-xs text-slate-700 hover:bg-slate-200"
+          >
+            设备设置
           </button>
         </div>
         <ConnectionStatus
@@ -849,6 +857,11 @@ function AppContent() {
                     : '循环巡航：先添加点位，再开始循环'}
         </div>
       )}
+
+      <RobotSettingsPanel
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+      />
     </div>
   );
 }

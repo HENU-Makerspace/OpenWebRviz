@@ -5,7 +5,7 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'node:os';
 import * as path from 'path';
-import { loadRobotConfig } from './config';
+import { loadRobotConfig, mergeYamlConfig, saveYamlConfig, type YamlConfig, type YamlPrimitive } from './config';
 
 const execAsync = promisify(exec);
 const app = new Hono();
@@ -13,6 +13,103 @@ const app = new Hono();
 const MAPS_DIR = path.join(process.cwd(), 'maps');
 
 const { config, configPath, profile: configProfile } = loadRobotConfig(path.join(process.cwd(), 'config'));
+
+function asString(value: YamlPrimitive | undefined, fallback = '') {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  return fallback;
+}
+
+function asNumber(value: YamlPrimitive | undefined, fallback = 0) {
+  if (typeof value === 'number') return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function renderMediaControlExecStart(sourceConfig: YamlConfig) {
+  const media = sourceConfig.media || {};
+  return [
+    '/usr/bin/python3',
+    '%h/bin/webbot-media-control.py',
+    '--host', '127.0.0.1',
+    '--port', String(asNumber(media.control_proxy_port, 19110)),
+    '--video-service', asString(media.video_service_name, 'webbot-video.service'),
+    '--media-service', asString(media.service_name, 'webbot-media.service'),
+    '--frame-dir', '%h/.local/state/webbot-media/frames',
+    '--video-device', asString(media.video_device, '/dev/video0'),
+    '--start-timeout-ms', '12000',
+  ].join(' ');
+}
+
+function renderFaceExecStart(sourceConfig: YamlConfig) {
+  const face = sourceConfig.face || {};
+  return [
+    '%h/face/.venv/bin/python',
+    '%h/bin/webbot-face-service.py',
+    '--host', '127.0.0.1',
+    '--port', String(asNumber(face.proxy_port, 19100)),
+    '--frame-dir', '%h/.local/state/webbot-media/frames',
+    '--device', asString(face.video_device, '/dev/video0'),
+    '--width', String(asNumber(face.frame_width, 1280)),
+    '--height', String(asNumber(face.frame_height, 720)),
+    '--interval-ms', String(asNumber(face.inference_interval_ms, 150)),
+    '--frame-stale-ms', '1500',
+    '--similarity-threshold', String(asNumber(face.score_threshold, 0.35)),
+    '--model-root', '%h/face/insightface',
+    '--face-db-dir', '%h/face/face_db',
+    '--registry-path', '%h/face/registry.json',
+  ].join(' ');
+}
+
+function buildSettingsPayload(sourceConfig: YamlConfig) {
+  const jetson = sourceConfig.jetson || {};
+  const media = sourceConfig.media || {};
+  const face = sourceConfig.face || {};
+  const reverseTunnel = sourceConfig.reverse_tunnel || {};
+
+  return {
+    profile: configProfile,
+    configPath,
+    jetson: {
+      host: asString(jetson.host, ''),
+      rosbridgePort: asNumber(jetson.rosbridge_port, 9090),
+    },
+    media: {
+      videoDevice: asString(media.video_device, '/dev/video0'),
+      videoWidth: asNumber(media.video_width, 1280),
+      videoHeight: asNumber(media.video_height, 720),
+      videoBitrate: asNumber(media.video_bitrate, 4000),
+      controlProxyPort: asNumber(media.control_proxy_port, 19110),
+      janusHttpPort: asNumber(media.janus_http_port, 8088),
+      janusDemoPort: asNumber(media.janus_demo_port, 8000),
+      audioCaptureDevice: asString(media.audio_capture_device, ''),
+      audioPlaybackDevice: asString(media.audio_playback_device, ''),
+      serviceName: asString(media.service_name, 'webbot-media.service'),
+      videoServiceName: asString(media.video_service_name, 'webbot-video.service'),
+      controlServiceName: asString(media.control_service_name, 'webbot-media-control.service'),
+    },
+    face: {
+      videoDevice: asString(face.video_device, '/dev/video0'),
+      frameWidth: asNumber(face.frame_width, 1280),
+      frameHeight: asNumber(face.frame_height, 720),
+      proxyPort: asNumber(face.proxy_port, 19100),
+      intervalMs: asNumber(face.inference_interval_ms, 150),
+      scoreThreshold: asNumber(face.score_threshold, 0.35),
+      serviceName: asString(face.service_name, 'webbot-face.service'),
+    },
+    reverseTunnel: {
+      serverHost: asString(reverseTunnel.server_host, ''),
+      rosbridgePort: asNumber(reverseTunnel.rosbridge_port, 19090),
+      mediaControlPort: asNumber(reverseTunnel.media_control_port, 19110),
+      facePort: asNumber(reverseTunnel.face_port, 19100),
+    },
+    generated: {
+      mediaControlExecStart: renderMediaControlExecStart(sourceConfig),
+      faceExecStart: renderFaceExecStart(sourceConfig),
+    },
+  };
+}
 
 // Server configuration
 const SERVER_HOST = config?.server?.host || process.env.SERVER_HOST || '192.168.1.100';
@@ -29,7 +126,7 @@ const JANUS_STREAMING_PATH = config?.media?.streaming_path || '/demos/streaming.
 const JANUS_AUDIOBRIDGE_PATH = config?.media?.audiobridge_path || '/demos/audiobridge.html';
 const JANUS_ADAPTER_ASSET = config?.media?.adapter_asset || 'adapter.min.js';
 const JANUS_SCRIPT_ASSET = config?.media?.janus_script_asset || 'janus.js';
-const LOCAL_JANUS_GATEWAY_DIR = config?.media?.local_janus_gateway_dir || path.join(process.cwd(), '..', '..', 'janus-gateway');
+const LOCAL_JANUS_GATEWAY_DIR = asString(config?.media?.local_janus_gateway_dir, path.join(process.cwd(), '..', '..', 'janus-gateway'));
 const LOCAL_JANUS_DEMOS_DIR = path.join(LOCAL_JANUS_GATEWAY_DIR, 'html', 'demos');
 const MEDIA_AUDIO_PLAYBACK_PORT = config?.media?.audio_playback_port || 5006;
 const MEDIA_VIDEO_STREAM_ID = config?.media?.preferred_video_stream_id || 0;
@@ -372,6 +469,65 @@ app.get('/api/config', (c) => {
       frameId: 'map',
     },
   });
+});
+
+app.get('/api/settings', (c) => {
+  return c.json(buildSettingsPayload(config));
+});
+
+app.post('/api/settings', async (c) => {
+  if (!configPath) {
+    return c.json({
+      error: 'Config path is not available',
+    }, 500);
+  }
+
+  try {
+    const body = await c.req.json();
+    const mergedConfig = mergeYamlConfig(config, {
+      jetson: {
+        host: body?.jetson?.host,
+        rosbridge_port: body?.jetson?.rosbridgePort,
+      },
+      media: {
+        video_device: body?.media?.videoDevice,
+        video_width: body?.media?.videoWidth,
+        video_height: body?.media?.videoHeight,
+        video_bitrate: body?.media?.videoBitrate,
+        control_proxy_port: body?.media?.controlProxyPort,
+        janus_http_port: body?.media?.janusHttpPort,
+        janus_demo_port: body?.media?.janusDemoPort,
+        audio_capture_device: body?.media?.audioCaptureDevice,
+        audio_playback_device: body?.media?.audioPlaybackDevice,
+      },
+      face: {
+        video_device: body?.face?.videoDevice,
+        frame_width: body?.face?.frameWidth,
+        frame_height: body?.face?.frameHeight,
+        proxy_port: body?.face?.proxyPort,
+        inference_interval_ms: body?.face?.intervalMs,
+        score_threshold: body?.face?.scoreThreshold,
+      },
+      reverse_tunnel: {
+        server_host: body?.reverseTunnel?.serverHost,
+        rosbridge_port: body?.reverseTunnel?.rosbridgePort,
+        media_control_port: body?.reverseTunnel?.mediaControlPort,
+        face_port: body?.reverseTunnel?.facePort,
+      },
+    });
+
+    saveYamlConfig(configPath, mergedConfig);
+
+    return c.json({
+      success: true,
+      settings: buildSettingsPayload(mergedConfig),
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to save settings',
+      details: errorMessage(error),
+    }, 500);
+  }
 });
 
 app.get('/api/media/assets/*', async (c) => {

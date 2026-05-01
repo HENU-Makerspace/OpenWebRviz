@@ -34,6 +34,23 @@ def generate_launch_description():
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
+            name='odom_to_camera_init',
+            arguments=[
+                '--x', '0',
+                '--y', '0',
+                '--z', '0',
+                '--qx', '0',
+                '--qy', '0',
+                '--qz', '0',
+                '--qw', '1',
+                '--frame-id', 'odom',
+                '--child-frame-id', 'camera_init',
+            ],
+            parameters=[{'use_sim_time': use_sim_time}],
+        ),
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
             name='base_link_to_camera_link',
             arguments=[
                 '--x', '0.15',
@@ -71,7 +88,7 @@ def generate_launch_description():
             remappings=[('cloud_in', '/cloud_registered_body'), ('scan', '/scan')],
             parameters=[{
                 'target_frame': pointcloud_target_frame,
-                'transform_tolerance': 0.05,
+                'transform_tolerance': 0.3,
                 'min_height': -0.1,
                 'max_height': 2.0,
                 'angle_min': -3.14159,

@@ -1,11 +1,11 @@
 amcl:
   ros__parameters:
     use_sim_time: False
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.2
+    alpha1: 0.01
+    alpha2: 0.01
+    alpha3: 0.01
+    alpha4: 0.01
+    alpha5: 0.01
     base_frame_id: "base_footprint" 
     beam_skip_distance: 0.5
     beam_skip_error_threshold: 0.9
@@ -20,7 +20,7 @@ amcl:
     max_beams: 60
     max_particles: 2000
     min_particles: 500
-    odom_frame_id: "camera_init"
+    odom_frame_id: "odom"
     pf_err: 0.05
     pf_z: 0.99
     recovery_alpha_fast: 0.0
@@ -30,9 +30,9 @@ amcl:
     save_pose_rate: 0.5
     sigma_hit: 0.2
     tf_broadcast: true
-    transform_tolerance: 1.0
+    transform_tolerance: 0.3
     update_min_a: 0.2
-    update_min_d: 0.25
+    update_min_d: 0.2
     z_hit: 0.5
     z_max: 0.05
     z_rand: 0.5
@@ -174,7 +174,7 @@ local_costmap:
     ros__parameters:
       update_frequency: 10.0
       publish_frequency: 5.0
-      global_frame: camera_init 
+      global_frame: odom 
       robot_base_frame: base_footprint 
       use_sim_time: False
       rolling_window: true
@@ -307,9 +307,9 @@ behavior_server:
       plugin: "nav2_behaviors/Wait"
     assisted_teleop:
       plugin: "nav2_behaviors/AssistedTeleop"
-    global_frame: camera_init
+    global_frame: odom
     robot_base_frame: base_footprint 
-    transform_tolerance: 0.1
+    transform_tolerance: 0.3
     use_sim_time: False
     simulate_ahead_time: 2.0
     max_rotational_vel: 0.6   # <--- 【修改】原为1.0，降低原地打转恢复时的最高转速

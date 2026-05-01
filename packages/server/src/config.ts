@@ -1,8 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+export type YamlPrimitive = string | number | boolean;
+export type YamlSection = Record<string, YamlPrimitive>;
+export type YamlConfig = Record<string, YamlSection>;
+
 export interface RobotConfigLoadResult {
-  config: Record<string, any>;
+  config: YamlConfig;
   configPath: string | null;
   profile: string;
 }
@@ -10,7 +14,7 @@ export interface RobotConfigLoadResult {
 // Simple YAML config parser for the flat section-based config files used here.
 export function parseYamlConfig(filePath: string) {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const config: Record<string, any> = {};
+  const config: YamlConfig = {};
   const lines = content.split('\n');
   let currentSection = '';
 
@@ -45,6 +49,59 @@ export function parseYamlConfig(filePath: string) {
   }
 
   return config;
+}
+
+function stringifyYamlPrimitive(value: YamlPrimitive) {
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  if (typeof value === 'number') {
+    return String(value);
+  }
+
+  return JSON.stringify(value);
+}
+
+export function stringifyYamlConfig(config: YamlConfig) {
+  const lines: string[] = [];
+
+  for (const [section, values] of Object.entries(config)) {
+    lines.push(`${section}:`);
+
+    for (const [key, value] of Object.entries(values)) {
+      lines.push(`  ${key}: ${stringifyYamlPrimitive(value)}`);
+    }
+
+    lines.push('');
+  }
+
+  return `${lines.join('\n').trimEnd()}\n`;
+}
+
+export function saveYamlConfig(filePath: string, config: YamlConfig) {
+  fs.writeFileSync(filePath, stringifyYamlConfig(config), 'utf-8');
+}
+
+export function mergeYamlConfig(baseConfig: YamlConfig, patch: Partial<Record<string, Partial<YamlSection>>>) {
+  const merged: YamlConfig = {};
+  const sectionNames = new Set([...Object.keys(baseConfig), ...Object.keys(patch)]);
+
+  for (const sectionName of sectionNames) {
+    const baseSection = baseConfig[sectionName] || {};
+    const patchSection = patch[sectionName] || {};
+    const mergedSection: YamlSection = { ...baseSection };
+
+    for (const [key, value] of Object.entries(patchSection)) {
+      if (value !== undefined) {
+        mergedSection[key] = value;
+      }
+    }
+
+    merged[sectionName] = mergedSection;
+  }
+
+  return merged;
 }
 
 function resolveOverridePath() {
