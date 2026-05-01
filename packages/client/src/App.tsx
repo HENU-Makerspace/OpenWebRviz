@@ -43,6 +43,7 @@ interface ServerConfig {
   topics?: {
     cmdVelTopic?: string;
     motionCmdTopic?: string;
+    standCmdTopic?: string;
   };
   teleop?: {
     standMode?: boolean;
@@ -644,6 +645,7 @@ function AppContent() {
     linearSpeed: 0.5,
     angularSpeed: 1.0,
     motionCmdTopic: config?.topics?.motionCmdTopic || '/diablo/MotionCmd',
+    standCmdTopic: config?.topics?.standCmdTopic || '/stand_cmd',
     standMode: config?.teleop?.standMode ?? false,
     up: config?.teleop?.up ?? 0.0,
     publishRateHz: config?.teleop?.publishRateHz ?? 25,

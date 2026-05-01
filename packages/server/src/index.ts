@@ -568,6 +568,7 @@ app.get('/api/config', (c) => {
     topics: {
       cmdVelTopic: config?.topics?.cmd_vel || '/cmd_vel',
       motionCmdTopic: config?.topics?.motion_cmd || '/diablo/MotionCmd',
+      standCmdTopic: config?.topics?.stand_cmd || '/stand_cmd',
     },
     teleop: {
       standMode: Boolean(config?.teleop?.stand_mode ?? false),

@@ -91,6 +91,7 @@ topics:
   map: "/map"
   cmd_vel: "/cmd_vel"
   motion_cmd: "/diablo/MotionCmd"
+  stand_cmd: "/stand_cmd"
   tf: "/tf"
   global_plan: "/plan"
   local_plan: "/local_plan"

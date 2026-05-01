@@ -5,6 +5,7 @@ interface TeleopSettings {
   linearSpeed: number;
   angularSpeed: number;
   motionCmdTopic: string;
+  standCmdTopic?: string;
   standMode: boolean;
   up: number;
   publishRateHz?: number;
@@ -16,6 +17,7 @@ export function useKeyboardTeleop(
     linearSpeed: 0.5,
     angularSpeed: 1.0,
     motionCmdTopic: '/diablo/MotionCmd',
+    standCmdTopic: '/stand_cmd',
     standMode: false,
     up: 0.0,
     publishRateHz: 25,
@@ -23,6 +25,7 @@ export function useKeyboardTeleop(
   enabled: boolean = true
 ) {
   const motionCmdPubRef = useRef<any>(null);
+  const standCmdPubRef = useRef<any>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const publishTimerRef = useRef<number | null>(null);
   const standModeRef = useRef(settings.standMode);
@@ -67,12 +70,18 @@ export function useKeyboardTeleop(
   }, [sendCommand]);
 
   const sendStanceCommand = useCallback((nextStandMode: boolean) => {
+    if (!standCmdPubRef.current) {
+      return;
+    }
     standModeRef.current = nextStandMode;
     setStandMode(nextStandMode);
+    standCmdPubRef.current.publish({ data: nextStandMode });
     for (let i = 0; i < 3; i += 1) {
-      window.setTimeout(() => sendCommand(0, 0, nextStandMode), i * 60);
+      window.setTimeout(() => {
+        standCmdPubRef.current?.publish({ data: nextStandMode });
+      }, i * 80);
     }
-  }, [sendCommand]);
+  }, []);
 
   // Initialize publisher
   useEffect(() => {
@@ -84,8 +93,15 @@ export function useKeyboardTeleop(
       messageType: 'motion_msgs/msg/MotionCtrl',
       queue_size: 1,
     });
+    standCmdPubRef.current = new ROSLIB.Topic({
+      ros,
+      name: settings.standCmdTopic || '/stand_cmd',
+      messageType: 'std_msgs/msg/Bool',
+      queue_size: 1,
+    });
 
     console.log('[useKeyboardTeleop] Publisher initialized for', settings.motionCmdTopic);
+    console.log('[useKeyboardTeleop] Publisher initialized for', settings.standCmdTopic || '/stand_cmd');
 
     return () => {
       sendStop();
@@ -93,8 +109,12 @@ export function useKeyboardTeleop(
         motionCmdPubRef.current.unadvertise();
         motionCmdPubRef.current = null;
       }
+      if (standCmdPubRef.current) {
+        standCmdPubRef.current.unadvertise();
+        standCmdPubRef.current = null;
+      }
     };
-  }, [ros, settings.motionCmdTopic, sendStop]);
+  }, [ros, settings.motionCmdTopic, settings.standCmdTopic, sendStop]);
 
   // Publish Diablo motion command directly in the same direction mapping the Jetson bridge used.
   const publishCmdVel = useCallback(() => {
