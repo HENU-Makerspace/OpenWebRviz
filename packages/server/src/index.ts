@@ -12,6 +12,12 @@ const app = new Hono();
 
 const MAPS_DIR = path.join(process.cwd(), 'maps');
 
+for (const key of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']) {
+  delete process.env[key];
+}
+process.env.NO_PROXY = '*';
+process.env.no_proxy = '*';
+
 const { config, configPath, profile: configProfile } = loadRobotConfig(path.join(process.cwd(), 'config'));
 
 function loadCurrentRobotConfig() {
