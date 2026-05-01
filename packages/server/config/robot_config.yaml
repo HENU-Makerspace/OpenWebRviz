@@ -62,7 +62,7 @@ media:
   audiobridge_forward_host: "127.0.0.1"
   audiobridge_forward_port: 5006
   audiobridge_display: "webbot-ui"
-  video_device: "/dev/video0"
+  video_device: "/dev/video6"
   video_port: 8004
   video_width: 1280
   video_height: 720
@@ -79,7 +79,7 @@ face:
   api_path: "/faces/latest"
   health_path: "/health"
   poll_interval_ms: 150
-  video_device: "/dev/video0"
+  video_device: "/dev/video6"
   frame_width: 1280
   frame_height: 720
   inference_interval_ms: 150

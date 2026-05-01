@@ -163,11 +163,28 @@ export function RobotSettingsPanel({ open, onClose }: RobotSettingsPanelProps) {
   };
 
   const handleApplyToJetson = async () => {
+    if (!draft) return;
+
     setApplying(true);
     setError(null);
     setSavedMessage(null);
 
     try {
+      const saveResponse = await fetch('/api/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(draft),
+      });
+      const saveResult = await saveResponse.json();
+      if (!saveResponse.ok) {
+        throw new Error(saveResult?.details || saveResult?.error || `HTTP ${saveResponse.status}`);
+      }
+
+      setSettings(saveResult.settings);
+      setDraft(saveResult.settings);
+
       const response = await fetch('/api/settings/apply-jetson', {
         method: 'POST',
       });
@@ -176,7 +193,7 @@ export function RobotSettingsPanel({ open, onClose }: RobotSettingsPanelProps) {
         throw new Error(result?.details || result?.error || `HTTP ${response.status}`);
       }
 
-      setSavedMessage(`已应用到 ${result.target}`);
+      setSavedMessage(`已保存并应用到 ${result.target}`);
     } catch (err) {
       setError(String(err));
     } finally {

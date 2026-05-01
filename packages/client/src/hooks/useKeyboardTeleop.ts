@@ -25,19 +25,23 @@ export function useKeyboardTeleop(
   const motionCmdPubRef = useRef<any>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const publishTimerRef = useRef<number | null>(null);
+  const standModeRef = useRef(settings.standMode);
   const [standMode, setStandMode] = useState(settings.standMode);
 
   useEffect(() => {
     setStandMode(settings.standMode);
+    standModeRef.current = settings.standMode;
   }, [settings.standMode]);
 
-  const sendCommand = useCallback((linear: number, angular: number, nextStandMode = standMode) => {
-    if (!motionCmdPubRef.current || !enabled) return;
+  const sendCommand = useCallback((linear: number, angular: number, nextStandMode?: boolean) => {
+    if (!motionCmdPubRef.current) return;
+    if (!enabled && (linear !== 0 || angular !== 0)) return;
+    const activeStandMode = nextStandMode ?? standModeRef.current;
 
     const msg = {
       mode_mark: false,
       mode: {
-        stand_mode: nextStandMode,
+        stand_mode: activeStandMode,
         pitch_ctrl_mode: false,
         roll_ctrl_mode: false,
         height_ctrl_mode: true,
@@ -47,7 +51,7 @@ export function useKeyboardTeleop(
       value: {
         forward: linear,
         left: angular,
-        up: nextStandMode ? 1.0 : 0.0,
+        up: activeStandMode ? 1.0 : 0.0,
         roll: 0.0,
         pitch: 0.0,
         leg_split: 0.0,
@@ -55,14 +59,15 @@ export function useKeyboardTeleop(
     };
 
     motionCmdPubRef.current.publish(msg);
-    console.log('[useKeyboardTeleop] Published /diablo/MotionCmd:', { linear, angular, standMode: nextStandMode });
-  }, [enabled, standMode]);
+    console.log('[useKeyboardTeleop] Published /diablo/MotionCmd:', { linear, angular, standMode: activeStandMode });
+  }, [enabled]);
 
   const sendStop = useCallback(() => {
     sendCommand(0, 0);
   }, [sendCommand]);
 
   const sendStanceCommand = useCallback((nextStandMode: boolean) => {
+    standModeRef.current = nextStandMode;
     setStandMode(nextStandMode);
     for (let i = 0; i < 3; i += 1) {
       window.setTimeout(() => sendCommand(0, 0, nextStandMode), i * 60);
@@ -71,7 +76,7 @@ export function useKeyboardTeleop(
 
   // Initialize publisher
   useEffect(() => {
-    if (!ros || !enabled) return;
+    if (!ros) return;
 
     motionCmdPubRef.current = new ROSLIB.Topic({
       ros,
@@ -89,7 +94,7 @@ export function useKeyboardTeleop(
         motionCmdPubRef.current = null;
       }
     };
-  }, [ros, settings.motionCmdTopic, enabled, sendStop]);
+  }, [ros, settings.motionCmdTopic, sendStop]);
 
   // Publish Diablo motion command directly in the same direction mapping the Jetson bridge used.
   const publishCmdVel = useCallback(() => {
@@ -138,7 +143,7 @@ export function useKeyboardTeleop(
 
   // Set up keyboard event listeners
   useEffect(() => {
-    if (!enabled) return;
+    if (!ros) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore if typing in an input
@@ -153,7 +158,7 @@ export function useKeyboardTeleop(
       if (e.code === 'KeyZ') {
         if (!e.repeat) {
           e.preventDefault();
-          sendStanceCommand(!standMode);
+          sendStanceCommand(!standModeRef.current);
         }
         return;
       }
@@ -207,7 +212,7 @@ export function useKeyboardTeleop(
       stopPublishing();
       sendStop();
     };
-  }, [enabled, sendStanceCommand, sendStop, standMode, startPublishing, stopPublishing]);
+  }, [ros, enabled, sendStanceCommand, sendStop, startPublishing, stopPublishing]);
 
   return {
     isActive: enabled,

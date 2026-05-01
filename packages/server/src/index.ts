@@ -14,6 +14,10 @@ const MAPS_DIR = path.join(process.cwd(), 'maps');
 
 const { config, configPath, profile: configProfile } = loadRobotConfig(path.join(process.cwd(), 'config'));
 
+function loadCurrentRobotConfig() {
+  return loadRobotConfig(path.join(process.cwd(), 'config'), configProfile);
+}
+
 function asString(value: YamlPrimitive | undefined, fallback = '') {
   if (typeof value === 'string') return value;
   if (typeof value === 'number') return String(value);
@@ -151,6 +155,14 @@ WantedBy=default.target
 `;
 }
 
+function renderMediaUnit() {
+  return fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-media.service'), 'utf-8');
+}
+
+function renderVideoUnit() {
+  return fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-video.service'), 'utf-8');
+}
+
 function renderMediaEnv(sourceConfig: YamlConfig) {
   const media = sourceConfig.media || {};
   return `JANUS_BINARY=${shellQuote(asString(media.janus_binary, '/opt/janus/bin/janus'))}
@@ -181,11 +193,35 @@ VIDEO_BITRATE=${shellQuote(String(asNumber(media.video_bitrate, 4000)))}
 }
 
 async function writeRemoteFile(host: string, remotePath: string, content: string) {
-  const encoded = Buffer.from(content, 'utf-8').toString('base64');
-  const parentDir = path.posix.dirname(remotePath);
-  await execAsync(
-    `ssh ${host} "mkdir -p ${shellQuote(parentDir)} && python3 -c \\"import base64, pathlib; pathlib.Path(${JSON.stringify(remotePath)}).write_bytes(base64.b64decode(${JSON.stringify(encoded)}))\\""`,
-  );
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webbot-remote-'));
+  const localPath = path.join(tempDir, path.basename(remotePath));
+
+  try {
+    fs.writeFileSync(localPath, content, 'utf-8');
+    const parentDir = path.posix.dirname(remotePath);
+    await execAsync(`ssh ${host} mkdir -p ${shellQuote(parentDir)}`);
+    await execAsync(`scp ${shellQuote(localPath)} ${host}:${shellQuote(remotePath)}`);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function ensureRemoteExecutable(host: string, remotePath: string) {
+  await execAsync(`ssh ${host} chmod +x ${shellQuote(remotePath)}`);
+}
+
+async function restartRemoteServices(host: string, serviceNames: string[]) {
+  const uniqueNames = Array.from(new Set(serviceNames.filter(Boolean)));
+  if (uniqueNames.length === 0) {
+    return;
+  }
+
+  const command = [
+    'systemctl --user daemon-reload',
+    `systemctl --user restart ${uniqueNames.map(shellQuote).join(' ')}`,
+  ].join(' && ');
+
+  await execAsync(`ssh ${host} ${shellQuote(command)}`);
 }
 
 // Server configuration
@@ -549,11 +585,14 @@ app.get('/api/config', (c) => {
 });
 
 app.get('/api/settings', (c) => {
-  return c.json(buildSettingsPayload(config));
+  const latest = loadCurrentRobotConfig();
+  return c.json(buildSettingsPayload(latest.config));
 });
 
 app.post('/api/settings', async (c) => {
-  if (!configPath) {
+  const latest = loadCurrentRobotConfig();
+
+  if (!latest.configPath) {
     return c.json({
       error: 'Config path is not available',
     }, 500);
@@ -561,7 +600,7 @@ app.post('/api/settings', async (c) => {
 
   try {
     const body = await c.req.json();
-    const mergedConfig = mergeYamlConfig(config, {
+    const mergedConfig = mergeYamlConfig(latest.config, {
       jetson: {
         host: body?.jetson?.host,
         rosbridge_port: body?.jetson?.rosbridgePort,
@@ -593,7 +632,7 @@ app.post('/api/settings', async (c) => {
       },
     });
 
-    saveYamlConfig(configPath, mergedConfig);
+    saveYamlConfig(latest.configPath, mergedConfig);
 
     return c.json({
       success: true,
@@ -622,30 +661,103 @@ app.post('/api/settings/apply-jetson', async (c) => {
       latestConfig.face?.service_unit_path,
       '/home/nvidia/.config/systemd/user/webbot-face.service',
     );
+    const mediaUnitPath = asString(
+      latestConfig.media?.service_unit_path,
+      '/home/nvidia/.config/systemd/user/webbot-media.service',
+    );
+    const videoUnitPath = asString(
+      latestConfig.media?.video_unit_path,
+      '/home/nvidia/.config/systemd/user/webbot-video.service',
+    );
+    const mediaScriptPath = asString(
+      latestConfig.media?.service_script_path,
+      '/home/nvidia/bin/webbot-media.sh',
+    );
+    const videoScriptPath = asString(
+      latestConfig.media?.video_script_path,
+      '/home/nvidia/bin/webbot-video.sh',
+    );
+    const mediaControlScriptPath = asString(
+      latestConfig.media?.control_script_path,
+      '/home/nvidia/bin/webbot-media-control.py',
+    );
+    const faceScriptPath = asString(
+      latestConfig.face?.service_script_path,
+      '/home/nvidia/bin/webbot-face-service.py',
+    );
     const mediaEnvPath = '/home/nvidia/.config/webbot/media.env';
     const videoEnvPath = '/home/nvidia/.config/webbot/video.env';
 
+    const mediaControlServiceName = asString(latestConfig.media?.control_service_name, 'webbot-media-control.service');
+    const faceServiceName = asString(latestConfig.face?.service_name, 'webbot-face.service');
+    const videoServiceName = asString(latestConfig.media?.video_service_name, 'webbot-video.service');
+    const mediaServiceName = asString(latestConfig.media?.service_name, 'webbot-media.service');
+
+    const mediaControlScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-media-control.py'), 'utf-8');
+    const faceScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-face-service.py'), 'utf-8');
+    const mediaScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-media.sh'), 'utf-8');
+    const videoScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-video.sh'), 'utf-8');
+
+    const mediaUnit = renderMediaUnit();
+    const videoUnit = renderVideoUnit();
+    await execAsync(`ssh ${sshTarget} mkdir -p ${shellQuote('/home/nvidia/.config/webbot')} ${shellQuote('/home/nvidia/.config/systemd/user')} ${shellQuote('/home/nvidia/bin')}`);
+
+    await writeRemoteFile(sshTarget, mediaUnitPath, mediaUnit);
+    await writeRemoteFile(sshTarget, videoUnitPath, videoUnit);
     await writeRemoteFile(sshTarget, mediaControlUnitPath, renderMediaControlUnit(latestConfig));
     await writeRemoteFile(sshTarget, faceUnitPath, renderFaceUnit(latestConfig));
+    await writeRemoteFile(sshTarget, mediaScriptPath, mediaScript);
+    await writeRemoteFile(sshTarget, videoScriptPath, videoScript);
+    await writeRemoteFile(sshTarget, mediaControlScriptPath, mediaControlScript);
+    await writeRemoteFile(sshTarget, faceScriptPath, faceScript);
     await writeRemoteFile(sshTarget, mediaEnvPath, renderMediaEnv(latestConfig));
     await writeRemoteFile(sshTarget, videoEnvPath, renderVideoEnv(latestConfig));
 
-    const daemonReloadCmd = [
-      'ssh',
-      sshTarget,
-      `"systemctl --user daemon-reload && systemctl --user restart webbot-media-control.service webbot-face.service && systemctl --user try-restart webbot-video.service webbot-media.service"`,
-    ].join(' ');
+    await ensureRemoteExecutable(sshTarget, mediaScriptPath);
+    await ensureRemoteExecutable(sshTarget, videoScriptPath);
+    await ensureRemoteExecutable(sshTarget, mediaControlScriptPath);
+    await ensureRemoteExecutable(sshTarget, faceScriptPath);
 
-    const { stdout, stderr } = await execAsync(daemonReloadCmd);
+    await restartRemoteServices(sshTarget, [
+      mediaServiceName,
+      mediaControlServiceName,
+      faceServiceName,
+      videoServiceName,
+    ]);
+
+    const { stdout, stderr } = await execAsync(
+      `ssh ${sshTarget} ${shellQuote(
+        `systemctl --user --no-pager --full status ${[
+          mediaServiceName,
+          mediaControlServiceName,
+          faceServiceName,
+          videoServiceName,
+        ].map(shellQuote).join(' ')}`
+      )}`,
+    );
 
     return c.json({
       success: true,
       target: sshTarget,
       files: {
+        mediaUnitPath,
+        videoUnitPath,
         mediaControlUnitPath,
         faceUnitPath,
+        mediaScriptPath,
+        videoScriptPath,
+        mediaControlScriptPath,
+        faceScriptPath,
         mediaEnvPath,
         videoEnvPath,
+      },
+      generated: {
+        mediaServiceExecStart: 'ExecStart=%h/bin/webbot-media.sh',
+        videoServiceExecStart: 'ExecStart=%h/bin/webbot-video.sh',
+        mediaControlExecStart: renderMediaControlExecStart(latestConfig),
+        faceExecStart: renderFaceExecStart(latestConfig),
+        mediaEnvironment: renderMediaEnv(latestConfig),
+        videoEnvironment: renderVideoEnv(latestConfig),
       },
       stdout: stdout.trim(),
       stderr: stderr.trim(),
