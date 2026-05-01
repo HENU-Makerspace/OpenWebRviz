@@ -20,6 +20,9 @@ VIDEO_HEIGHT="720"
 VIDEO_FRAMERATE="30/1"
 VIDEO_BITRATE="4000"
 VIDEO_FACE_FRAME_RATE="2/1"
+VIDEO_STREAM_ID="101"
+VIDEO_STREAM_PT="96"
+VIDEO_STREAM_CODEC="h264"
 MEDIA_ENV_FILE="${HOME}/.config/webbot/media.env"
 
 if [[ -f "${MEDIA_ENV_FILE}" ]]; then
@@ -44,6 +47,7 @@ log() {
 prepare_janus_runtime_config() {
   local main_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.jcfg"
   local http_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.transport.http.jcfg"
+  local streaming_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.plugin.streaming.jcfg"
 
   if [[ -f "${JANUS_CONFIG_DIR}/janus.jcfg" ]]; then
     cp "${JANUS_CONFIG_DIR}/janus.jcfg" "${main_cfg}"
@@ -61,6 +65,23 @@ prepare_janus_runtime_config() {
       sed -i '/^[[:space:]]*port[[:space:]]*= 8088/a \	ip = "0.0.0.0"' "${http_cfg}"
     fi
   fi
+
+  cat > "${streaming_cfg}" <<EOF
+general: {
+}
+
+webbot-video: {
+	type = "rtp"
+	id = ${VIDEO_STREAM_ID}
+	description = "WebBot H264 live stream"
+	audio = false
+	video = true
+	videoport = ${VIDEO_PORT}
+	videopt = ${VIDEO_STREAM_PT}
+	videocodec = "${VIDEO_STREAM_CODEC}"
+	is_private = false
+}
+EOF
 }
 
 cleanup_legacy_processes() {
