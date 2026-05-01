@@ -17,3 +17,6 @@ log/
 packages/server/src/__pycache__/
 packages/server/systemd/__pycache__/
 qiuhua.ying-guang.com_nginx/
+.codex_tmp/
+__pycache__/
+*.pyc
