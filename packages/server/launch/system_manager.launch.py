@@ -53,6 +53,12 @@ def generate_launch_description():
         description='Optional Nav2 params override. Leave empty to let the navigation launch select params by speed.'
     )
 
+    slam_params_file_arg = DeclareLaunchArgument(
+        'slam_params_file',
+        default_value='/home/nvidia/ros2_ws/my_slam.yaml',
+        description='SLAM params file used by mapping launch.'
+    )
+
     cmd_vel_timeout_arg = DeclareLaunchArgument(
         'cmd_vel_timeout_sec',
         default_value='0.5',
@@ -72,6 +78,7 @@ def generate_launch_description():
         parameters=[{
             'slam_package': LaunchConfiguration('slam_package'),
             'slam_launch_file': LaunchConfiguration('slam_launch_file'),
+            'slam_params_file': LaunchConfiguration('slam_params_file'),
             'nav_package': LaunchConfiguration('nav_package'),
             'nav_launch_file': LaunchConfiguration('nav_launch_file'),
             'stand_nav_launch_file': LaunchConfiguration('stand_nav_launch_file'),
@@ -93,6 +100,7 @@ def generate_launch_description():
         maps_dir_arg,
         server_url_arg,
         nav2_params_file_arg,
+        slam_params_file_arg,
         cmd_vel_timeout_arg,
         cmd_vel_stop_period_arg,
         system_manager_node,

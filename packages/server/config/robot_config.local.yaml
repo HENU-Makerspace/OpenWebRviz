@@ -6,7 +6,7 @@
 
 server:
   host: "127.0.0.1"
-  port: 4001
+  port: 4101
 
 jetson:
   host: "192.168.1.58"
@@ -19,7 +19,7 @@ rosbridge:
   address: "0.0.0.0"
 
 frontend:
-  api_url: "http://127.0.0.1:4001"
+  api_url: "http://127.0.0.1:4101"
   ws_url: "ws://192.168.1.58:9090"
 
 reverse_tunnel:

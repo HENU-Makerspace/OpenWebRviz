@@ -24,7 +24,7 @@ except ImportError:
 
 
 def discover_server_url():
-    """Discover server URL by scanning entire local subnet"""
+    """Discover a reachable local server URL by scanning the robot subnet."""
     import socket
 
     # Get robot's own IP to determine subnet
@@ -56,13 +56,17 @@ def discover_server_url():
         if result['url']:
             return
         try:
-            resp = requests.get(f'http://{ip}:4001/api/network', timeout=1)
-            if resp.status_code == 200:
+            for port in (4101, 4001):
+                resp = requests.get(f'http://{ip}:{port}/api/network', timeout=1)
+                if resp.status_code != 200:
+                    continue
                 data = resp.json()
                 if data.get('ips') and len(data['ips']) > 0:
                     server_ip = data['ips'][0]
+                    discovered_port = data.get('port') or port
                     with result['lock']:
-                        result['url'] = f'http://{server_ip}:4001'
+                        result['url'] = f'http://{server_ip}:{discovered_port}'
+                    return
         except:
             pass
 
@@ -102,6 +106,7 @@ class SystemManager(Node):
         self.declare_parameter('nav_launch_file', 'nav_all.launch.py')
         self.declare_parameter('stand_nav_launch_file', 'stand_nav_launch.py')
         self.declare_parameter('nav2_params_file', '')
+        self.declare_parameter('slam_params_file', '/home/nvidia/ros2_ws/my_slam.yaml')
         self.declare_parameter('cmd_vel_timeout_sec', 0.5)
         self.declare_parameter('cmd_vel_stop_period_sec', 0.2)
         self.declare_parameter('server_url', 'http://182.43.86.126:4001')
@@ -113,6 +118,7 @@ class SystemManager(Node):
         self.nav_launch_file = self.get_parameter('nav_launch_file').value
         self.stand_nav_launch_file = self.get_parameter('stand_nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
+        self.slam_params_file = self.get_parameter('slam_params_file').value
         self.cmd_vel_timeout_sec = float(self.get_parameter('cmd_vel_timeout_sec').value)
         self.cmd_vel_stop_period_sec = float(self.get_parameter('cmd_vel_stop_period_sec').value)
 
@@ -297,7 +303,18 @@ class SystemManager(Node):
         self.get_logger().info('Starting SLAM...')
 
         try:
-            cmd = self.build_ros_command(['ros2', 'launch', self.slam_package, self.slam_launch_file])
+            ros_args = ['ros2', 'launch', self.slam_package, self.slam_launch_file]
+
+            slam_params_file = str(self.slam_params_file or '').strip()
+            if slam_params_file:
+                if not os.path.exists(slam_params_file):
+                    response.success = False
+                    response.message = f'SLAM params file not found: {slam_params_file}'
+                    return response
+                ros_args.append(f'slam_params_file:={slam_params_file}')
+
+            ros_args.append('pointcloud_target_frame:=base_footprint')
+            cmd = self.build_ros_command(ros_args)
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'slam'
 
@@ -415,6 +432,7 @@ class SystemManager(Node):
                 if os.path.exists(yaml_path) and os.path.exists(pgm_path):
                     # Upload to server
                     try:
+                        upload_base_url = self.resolve_map_upload_url()
                         with open(yaml_path, 'r') as f:
                             yaml_content = f.read()
                         with open(pgm_path, 'rb') as f:
@@ -425,7 +443,7 @@ class SystemManager(Node):
                             'yaml': yaml_content,
                             'pgm': pgm_content
                         }
-                        upload_url = f'{self.server_url}/api/maps/upload'
+                        upload_url = f'{upload_base_url}/api/maps/upload'
                         self.get_logger().info(f'Uploading map to {upload_url}...')
                         upload_resp = requests.post(upload_url, json=upload_data, timeout=30)
                         if upload_resp.status_code == 200:
@@ -451,6 +469,17 @@ class SystemManager(Node):
             response.message = f'Failed: {e}'
 
         return response
+
+    def resolve_map_upload_url(self):
+        discovered_url = discover_server_url()
+        if discovered_url:
+            if discovered_url != self.server_url:
+                self.get_logger().info(
+                    f'Using discovered local server for map upload: {discovered_url} (fallback: {self.server_url})'
+                )
+            return discovered_url
+
+        return self.server_url
 
     def handle_status(self, request, response):
         status = 'idle'

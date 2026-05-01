@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { exec, execSync } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs';
+import * as os from 'node:os';
 import * as path from 'path';
 import { loadRobotConfig } from './config';
 
@@ -751,7 +752,7 @@ app.get('/api/network', async (c) => {
 
     return c.json({
       ips,
-      hostname: require('os').hostname(),
+      hostname: os.hostname(),
       port: PORT,
     });
   } catch {
@@ -759,7 +760,7 @@ app.get('/api/network', async (c) => {
   }
 });
 
-const PORT = process.env.PORT || 4001;
+const PORT = process.env.PORT || SERVER_PORT || 4001;
 
 console.log(`Server running on http://0.0.0.0:${PORT}`);
 
