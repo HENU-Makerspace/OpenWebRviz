@@ -111,6 +111,83 @@ function buildSettingsPayload(sourceConfig: YamlConfig) {
   };
 }
 
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function renderMediaControlUnit(sourceConfig: YamlConfig) {
+  return `[Unit]
+Description=WebBot Local Media Control API
+After=webbot-media.service
+Requires=webbot-media.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${renderMediaControlExecStart(sourceConfig)}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`;
+}
+
+function renderFaceUnit(sourceConfig: YamlConfig) {
+  return `[Unit]
+Description=WebBot Face Recognition Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${renderFaceExecStart(sourceConfig)}
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
+`;
+}
+
+function renderMediaEnv(sourceConfig: YamlConfig) {
+  const media = sourceConfig.media || {};
+  return `JANUS_BINARY=${shellQuote(asString(media.janus_binary, '/opt/janus/bin/janus'))}
+JANUS_HTML_DIR=${shellQuote(asString(media.janus_html_dir, '/opt/janus/share/janus/html'))}
+JANUS_DEMO_PORT=${shellQuote(String(asNumber(media.janus_demo_port, 8000)))}
+AUDIO_CAPTURE_DEVICE=${shellQuote(asString(media.audio_capture_device, 'plughw:CARD=UACDemoV10,DEV=0'))}
+AUDIO_CAPTURE_PORT=${shellQuote(String(asNumber(media.audio_capture_port, 5005)))}
+AUDIO_PLAYBACK_DEVICE=${shellQuote(asString(media.audio_playback_device, 'plughw:CARD=UACDemoV10,DEV=0'))}
+AUDIO_PLAYBACK_PORT=${shellQuote(String(asNumber(media.audio_playback_port, 5006)))}
+VIDEO_DEVICE=${shellQuote(asString(media.video_device, '/dev/video0'))}
+VIDEO_PORT=${shellQuote(String(asNumber(media.video_port, 8004)))}
+VIDEO_WIDTH=${shellQuote(String(asNumber(media.video_width, 1280)))}
+VIDEO_HEIGHT=${shellQuote(String(asNumber(media.video_height, 720)))}
+VIDEO_FRAMERATE=${shellQuote(asString(media.video_framerate, '30/1'))}
+VIDEO_BITRATE=${shellQuote(String(asNumber(media.video_bitrate, 4000)))}
+`;
+}
+
+function renderVideoEnv(sourceConfig: YamlConfig) {
+  const media = sourceConfig.media || {};
+  return `VIDEO_DEVICE=${shellQuote(asString(media.video_device, '/dev/video0'))}
+VIDEO_PORT=${shellQuote(String(asNumber(media.video_port, 8004)))}
+VIDEO_WIDTH=${shellQuote(String(asNumber(media.video_width, 1280)))}
+VIDEO_HEIGHT=${shellQuote(String(asNumber(media.video_height, 720)))}
+VIDEO_FRAMERATE=${shellQuote(asString(media.video_framerate, '30/1'))}
+VIDEO_BITRATE=${shellQuote(String(asNumber(media.video_bitrate, 4000)))}
+`;
+}
+
+async function writeRemoteFile(host: string, remotePath: string, content: string) {
+  const encoded = Buffer.from(content, 'utf-8').toString('base64');
+  const parentDir = path.posix.dirname(remotePath);
+  await execAsync(
+    `ssh ${host} "mkdir -p ${shellQuote(parentDir)} && python3 -c \\"import base64, pathlib; pathlib.Path(${JSON.stringify(remotePath)}).write_bytes(base64.b64decode(${JSON.stringify(encoded)}))\\""`,
+  );
+}
+
 // Server configuration
 const SERVER_HOST = config?.server?.host || process.env.SERVER_HOST || '192.168.1.100';
 const SERVER_PORT = config?.server?.port || process.env.SERVER_PORT || 4001;
@@ -525,6 +602,57 @@ app.post('/api/settings', async (c) => {
   } catch (error) {
     return c.json({
       error: 'Failed to save settings',
+      details: errorMessage(error),
+    }, 500);
+  }
+});
+
+app.post('/api/settings/apply-jetson', async (c) => {
+  try {
+    const latest = loadRobotConfig(path.join(process.cwd(), 'config'), configProfile);
+    const latestConfig = latest.config;
+    const jetsonHost = asString(latestConfig.jetson?.host, asString(JETSON_HOST, '192.168.1.58'));
+    const sshTarget = `${asString(latestConfig.jetson?.user, 'nvidia')}@${jetsonHost}`;
+
+    const mediaControlUnitPath = asString(
+      latestConfig.media?.control_unit_path,
+      '/home/nvidia/.config/systemd/user/webbot-media-control.service',
+    );
+    const faceUnitPath = asString(
+      latestConfig.face?.service_unit_path,
+      '/home/nvidia/.config/systemd/user/webbot-face.service',
+    );
+    const mediaEnvPath = '/home/nvidia/.config/webbot/media.env';
+    const videoEnvPath = '/home/nvidia/.config/webbot/video.env';
+
+    await writeRemoteFile(sshTarget, mediaControlUnitPath, renderMediaControlUnit(latestConfig));
+    await writeRemoteFile(sshTarget, faceUnitPath, renderFaceUnit(latestConfig));
+    await writeRemoteFile(sshTarget, mediaEnvPath, renderMediaEnv(latestConfig));
+    await writeRemoteFile(sshTarget, videoEnvPath, renderVideoEnv(latestConfig));
+
+    const daemonReloadCmd = [
+      'ssh',
+      sshTarget,
+      `"systemctl --user daemon-reload && systemctl --user restart webbot-media-control.service webbot-face.service && systemctl --user try-restart webbot-video.service webbot-media.service"`,
+    ].join(' ');
+
+    const { stdout, stderr } = await execAsync(daemonReloadCmd);
+
+    return c.json({
+      success: true,
+      target: sshTarget,
+      files: {
+        mediaControlUnitPath,
+        faceUnitPath,
+        mediaEnvPath,
+        videoEnvPath,
+      },
+      stdout: stdout.trim(),
+      stderr: stderr.trim(),
+    });
+  } catch (error) {
+    return c.json({
+      error: 'Failed to apply settings to Jetson',
       details: errorMessage(error),
     }, 500);
   }

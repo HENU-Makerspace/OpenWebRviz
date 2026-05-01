@@ -91,6 +91,7 @@ export function RobotSettingsPanel({ open, onClose }: RobotSettingsPanelProps) {
   const [draft, setDraft] = useState<RobotSettings | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -158,6 +159,28 @@ export function RobotSettingsPanel({ open, onClose }: RobotSettingsPanelProps) {
       setError(String(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleApplyToJetson = async () => {
+    setApplying(true);
+    setError(null);
+    setSavedMessage(null);
+
+    try {
+      const response = await fetch('/api/settings/apply-jetson', {
+        method: 'POST',
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result?.details || result?.error || `HTTP ${response.status}`);
+      }
+
+      setSavedMessage(`已应用到 ${result.target}`);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setApplying(false);
     }
   };
 
@@ -334,16 +357,25 @@ export function RobotSettingsPanel({ open, onClose }: RobotSettingsPanelProps) {
 
         <div className="flex items-center justify-between border-t px-5 py-4">
           <div className="text-xs text-slate-500">
-            保存后会更新当前 profile 配置文件。Jetson 侧 service 重载和覆盖我再接下一步。
+            先保存配置，再应用到 Jetson，会重载并重启相关媒体/人脸服务。
           </div>
-          <button
-            onClick={() => void handleSave()}
-            disabled={loading || saving || !draft}
-            className="inline-flex items-center gap-2 rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" />
-            {saving ? '保存中...' : '保存设置'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void handleApplyToJetson()}
+              disabled={loading || saving || applying || !draft}
+              className="inline-flex items-center gap-2 rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {applying ? '应用中...' : '应用到 Jetson'}
+            </button>
+            <button
+              onClick={() => void handleSave()}
+              disabled={loading || saving || applying || !draft}
+              className="inline-flex items-center gap-2 rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {saving ? '保存中...' : '保存设置'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -8,6 +8,13 @@ VIDEO_HEIGHT="720"
 VIDEO_FRAMERATE="30/1"
 VIDEO_BITRATE="4000"
 VIDEO_FACE_FRAME_RATE="6/1"
+VIDEO_ENV_FILE="${HOME}/.config/webbot/video.env"
+
+if [[ -f "${VIDEO_ENV_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${VIDEO_ENV_FILE}"
+fi
+
 STATE_DIR="${HOME}/.local/state/webbot-media"
 FRAME_DIR="${STATE_DIR}/frames"
 LOG_FILE="${STATE_DIR}/video.log"
