@@ -29,6 +29,7 @@ export function useKeyboardTeleop(
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const publishTimerRef = useRef<number | null>(null);
   const standModeRef = useRef(settings.standMode);
+  const stanceTimerIdsRef = useRef<number[]>([]);
   const [standMode, setStandMode] = useState(settings.standMode);
 
   useEffect(() => {
@@ -36,13 +37,13 @@ export function useKeyboardTeleop(
     standModeRef.current = settings.standMode;
   }, [settings.standMode]);
 
-  const sendCommand = useCallback((linear: number, angular: number, nextStandMode?: boolean) => {
+  const sendCommand = useCallback((linear: number, angular: number, nextStandMode?: boolean, modeMark = false) => {
     if (!motionCmdPubRef.current) return;
     if (!enabled && (linear !== 0 || angular !== 0)) return;
     const activeStandMode = nextStandMode ?? standModeRef.current;
 
     const msg = {
-      mode_mark: false,
+      mode_mark: modeMark,
       mode: {
         stand_mode: activeStandMode,
         pitch_ctrl_mode: false,
@@ -62,7 +63,12 @@ export function useKeyboardTeleop(
     };
 
     motionCmdPubRef.current.publish(msg);
-    console.log('[useKeyboardTeleop] Published /diablo/MotionCmd:', { linear, angular, standMode: activeStandMode });
+    console.log('[useKeyboardTeleop] Published /diablo/MotionCmd:', {
+      linear,
+      angular,
+      standMode: activeStandMode,
+      modeMark,
+    });
   }, [enabled]);
 
   const sendStop = useCallback(() => {
@@ -70,18 +76,38 @@ export function useKeyboardTeleop(
   }, [sendCommand]);
 
   const sendStanceCommand = useCallback((nextStandMode: boolean) => {
-    if (!standCmdPubRef.current) {
-      return;
-    }
+    stanceTimerIdsRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    stanceTimerIdsRef.current = [];
+
     standModeRef.current = nextStandMode;
     setStandMode(nextStandMode);
-    standCmdPubRef.current.publish({ data: nextStandMode });
-    for (let i = 0; i < 3; i += 1) {
-      window.setTimeout(() => {
+
+    const publishStandCmd = () => {
+      if (standCmdPubRef.current) {
         standCmdPubRef.current?.publish({ data: nextStandMode });
-      }, i * 80);
+        console.log('[useKeyboardTeleop] Published /stand_cmd:', nextStandMode);
+      }
+    };
+
+    publishStandCmd();
+
+    for (let i = 0; i < 10; i += 1) {
+      stanceTimerIdsRef.current.push(window.setTimeout(() => {
+        publishStandCmd();
+        sendCommand(0, 0, nextStandMode, true);
+      }, i * 40));
     }
-  }, []);
+
+    for (let i = 0; i < 5; i += 1) {
+      stanceTimerIdsRef.current.push(window.setTimeout(() => {
+        sendCommand(0, 0, nextStandMode, false);
+      }, 420 + i * 60));
+    }
+
+    stanceTimerIdsRef.current.push(window.setTimeout(() => {
+      stanceTimerIdsRef.current = [];
+    }, 800));
+  }, [sendCommand]);
 
   // Initialize publisher
   useEffect(() => {
@@ -104,6 +130,8 @@ export function useKeyboardTeleop(
     console.log('[useKeyboardTeleop] Publisher initialized for', settings.standCmdTopic || '/stand_cmd');
 
     return () => {
+      stanceTimerIdsRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      stanceTimerIdsRef.current = [];
       sendStop();
       if (motionCmdPubRef.current) {
         motionCmdPubRef.current.unadvertise();
@@ -228,6 +256,8 @@ export function useKeyboardTeleop(
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleWindowBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      stanceTimerIdsRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      stanceTimerIdsRef.current = [];
       pressedKeysRef.current.clear();
       stopPublishing();
       sendStop();
