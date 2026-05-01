@@ -36,7 +36,7 @@ function renderMediaControlExecStart(sourceConfig: YamlConfig) {
   return [
     '/usr/bin/python3',
     '%h/bin/webbot-media-control.py',
-    '--host', '127.0.0.1',
+    '--host', asString(media.bind_host, '0.0.0.0'),
     '--port', String(asNumber(media.control_proxy_port, 19110)),
     '--video-service', asString(media.video_service_name, 'webbot-video.service'),
     '--media-service', asString(media.service_name, 'webbot-media.service'),
@@ -51,7 +51,7 @@ function renderFaceExecStart(sourceConfig: YamlConfig) {
   return [
     '%h/face/.venv/bin/python',
     '%h/bin/webbot-face-service.py',
-    '--host', '127.0.0.1',
+    '--host', asString(face.bind_host, '0.0.0.0'),
     '--port', String(asNumber(face.proxy_port, 19100)),
     '--frame-dir', '%h/.local/state/webbot-media/frames',
     '--device', asString(face.video_device, '/dev/video0'),
@@ -89,6 +89,7 @@ function buildSettingsPayload(sourceConfig: YamlConfig) {
       janusDemoPort: asNumber(media.janus_demo_port, 8000),
       audioCaptureDevice: asString(media.audio_capture_device, ''),
       audioPlaybackDevice: asString(media.audio_playback_device, ''),
+      bindHost: asString(media.bind_host, '0.0.0.0'),
       serviceName: asString(media.service_name, 'webbot-media.service'),
       videoServiceName: asString(media.video_service_name, 'webbot-video.service'),
       controlServiceName: asString(media.control_service_name, 'webbot-media-control.service'),
@@ -100,6 +101,7 @@ function buildSettingsPayload(sourceConfig: YamlConfig) {
       proxyPort: asNumber(face.proxy_port, 19100),
       intervalMs: asNumber(face.inference_interval_ms, 150),
       scoreThreshold: asNumber(face.score_threshold, 0.35),
+      bindHost: asString(face.bind_host, '0.0.0.0'),
       serviceName: asString(face.service_name, 'webbot-face.service'),
     },
     reverseTunnel: {
@@ -600,6 +602,7 @@ app.post('/api/settings', async (c) => {
         video_width: body?.media?.videoWidth,
         video_height: body?.media?.videoHeight,
         video_bitrate: body?.media?.videoBitrate,
+        bind_host: body?.media?.bindHost,
         control_proxy_port: body?.media?.controlProxyPort,
         janus_http_port: body?.media?.janusHttpPort,
         janus_demo_port: body?.media?.janusDemoPort,
@@ -610,6 +613,7 @@ app.post('/api/settings', async (c) => {
         video_device: body?.face?.videoDevice,
         frame_width: body?.face?.frameWidth,
         frame_height: body?.face?.frameHeight,
+        bind_host: body?.face?.bindHost,
         proxy_port: body?.face?.proxyPort,
         inference_interval_ms: body?.face?.intervalMs,
         score_threshold: body?.face?.scoreThreshold,
@@ -682,7 +686,7 @@ app.post('/api/settings/apply-jetson', async (c) => {
     const faceServiceName = asString(latestConfig.face?.service_name, 'webbot-face.service');
     const videoServiceName = asString(latestConfig.media?.video_service_name, 'webbot-video.service');
     const mediaServiceName = asString(latestConfig.media?.service_name, 'webbot-media.service');
-    const restartStateFile = '/tmp/webbot-service-state.json';
+    const restartStateFile = '/tmp/webbot-service-state.env';
 
     const mediaControlScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-media-control.py'), 'utf-8');
     const faceScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-face-service.py'), 'utf-8');
@@ -707,26 +711,22 @@ app.post('/api/settings/apply-jetson', async (c) => {
       { remotePath: videoEnvPath, content: videoEnv },
     ]);
 
-    const remoteApplyScript = [
-      'import json, subprocess',
-      `state_path = ${JSON.stringify(restartStateFile)}`,
-      `services = ${JSON.stringify([mediaServiceName, mediaControlServiceName, faceServiceName, videoServiceName])}`,
-      'states = {}',
-      'for service in services:',
-      "    result = subprocess.run(['systemctl', '--user', 'is-active', service], capture_output=True, text=True, check=False)",
-      "    states[service] = result.stdout.strip() == 'active'",
-      `subprocess.run(['chmod', '+x', ${JSON.stringify(mediaScriptPath)}, ${JSON.stringify(videoScriptPath)}, ${JSON.stringify(mediaControlScriptPath)}, ${JSON.stringify(faceScriptPath)}], check=False)`,
-      "subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False)",
-      `always_restart = ${JSON.stringify([mediaServiceName, mediaControlServiceName])}`,
-      `restart_if_active = ${JSON.stringify([faceServiceName, videoServiceName])}`,
-      'for service in always_restart:',
-      "    subprocess.run(['systemctl', '--user', 'restart', service], check=False)",
-      'for service in restart_if_active:',
-      '    if states.get(service):',
-      "        subprocess.run(['systemctl', '--user', 'restart', service], check=False)",
-    ].join('; ');
+    const remoteApplyCommand = [
+      `MEDIA_WAS_ACTIVE=$(systemctl --user is-active ${shellQuote(mediaServiceName)} >/dev/null 2>&1 && echo 1 || echo 0)`,
+      `MEDIA_CONTROL_WAS_ACTIVE=$(systemctl --user is-active ${shellQuote(mediaControlServiceName)} >/dev/null 2>&1 && echo 1 || echo 0)`,
+      `FACE_WAS_ACTIVE=$(systemctl --user is-active ${shellQuote(faceServiceName)} >/dev/null 2>&1 && echo 1 || echo 0)`,
+      `VIDEO_WAS_ACTIVE=$(systemctl --user is-active ${shellQuote(videoServiceName)} >/dev/null 2>&1 && echo 1 || echo 0)`,
+      `printf "MEDIA_WAS_ACTIVE=%s\\nMEDIA_CONTROL_WAS_ACTIVE=%s\\nFACE_WAS_ACTIVE=%s\\nVIDEO_WAS_ACTIVE=%s\\n" "$MEDIA_WAS_ACTIVE" "$MEDIA_CONTROL_WAS_ACTIVE" "$FACE_WAS_ACTIVE" "$VIDEO_WAS_ACTIVE" > ${shellQuote(restartStateFile)}`,
+      `chmod +x ${shellQuote(mediaScriptPath)} ${shellQuote(videoScriptPath)} ${shellQuote(mediaControlScriptPath)} ${shellQuote(faceScriptPath)}`,
+      'systemctl --user daemon-reload',
+      `systemctl --user restart ${shellQuote(mediaServiceName)} ${shellQuote(mediaControlServiceName)}`,
+      `if [ -f ${shellQuote(restartStateFile)} ]; then . ${shellQuote(restartStateFile)}; fi`,
+      `if [ "${'$'}{FACE_WAS_ACTIVE:-0}" = "1" ]; then systemctl --user restart ${shellQuote(faceServiceName)}; fi`,
+      `if [ "${'$'}{VIDEO_WAS_ACTIVE:-0}" = "1" ]; then systemctl --user restart ${shellQuote(videoServiceName)}; fi`,
+      `rm -f ${shellQuote(restartStateFile)}`,
+    ].join(' && ');
 
-    await execAsync(`ssh ${sshTarget} python3 -c ${shellQuote(remoteApplyScript)}`);
+    await execAsync(`ssh ${sshTarget} ${shellQuote(remoteApplyCommand)}`);
 
     const { stdout, stderr } = await execAsync(
       `ssh ${sshTarget} ${shellQuote(
@@ -735,7 +735,7 @@ app.post('/api/settings/apply-jetson', async (c) => {
           mediaControlServiceName,
           faceServiceName,
           videoServiceName,
-        ].map(shellQuote).join(' ')}`
+        ].map(shellQuote).join(' ')} || true`
       )}`,
     );
 

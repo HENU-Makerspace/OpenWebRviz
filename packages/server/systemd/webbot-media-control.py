@@ -95,6 +95,23 @@ class MediaControlRuntime:
             },
         }
 
+    def video_pipeline_ready(self, status: dict[str, object]) -> bool:
+        video = status.get("video")
+        media = status.get("media")
+        if not isinstance(video, dict) or not isinstance(media, dict):
+          return False
+
+        if not video.get("active") or not media.get("active"):
+          return False
+
+        if int(video.get("frameCount") or 0) > 0:
+          return True
+
+        # Some cameras keep the RTP pipeline running before the JPEG frame branch
+        # starts producing files. Treat an active service with a present device as
+        # ready instead of timing out the frontend with a 502.
+        return bool(video.get("deviceExists"))
+
     def start_video(self) -> tuple[dict[str, object], int]:
         self.run_systemctl("reset-failed", self.args.video_service, check=False)
         start_result = self.run_systemctl("start", self.args.video_service, check=False)
@@ -109,17 +126,16 @@ class MediaControlRuntime:
         while time.monotonic() < deadline:
             status = self.video_status()
             video = status["video"]
-            if isinstance(video, dict):
-                if video.get("active") and int(video.get("frameCount") or 0) > 0:
-                    return {
-                        "status": "started",
-                        **status,
-                    }, 200
-                if video.get("activeState") == "failed":
-                    return {
-                        "error": "video_service_failed",
-                        **status,
-                    }, 500
+            if self.video_pipeline_ready(status):
+                return {
+                    "status": "started",
+                    **status,
+                }, 200
+            if isinstance(video, dict) and video.get("activeState") == "failed":
+                return {
+                    "error": "video_service_failed",
+                    **status,
+                }, 500
             time.sleep(0.5)
 
         return {

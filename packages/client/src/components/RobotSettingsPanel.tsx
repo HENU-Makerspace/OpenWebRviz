@@ -13,6 +13,7 @@ export interface RobotSettings {
     videoWidth: number;
     videoHeight: number;
     videoBitrate: number;
+    bindHost: string;
     controlProxyPort: number;
     janusHttpPort: number;
     janusDemoPort: number;
@@ -26,6 +27,7 @@ export interface RobotSettings {
     videoDevice: string;
     frameWidth: number;
     frameHeight: number;
+    bindHost: string;
     proxyPort: number;
     intervalMs: number;
     scoreThreshold: number;
@@ -300,6 +302,28 @@ export function RobotSettingsPanel({ open, onClose }: RobotSettingsPanelProps) {
                       onChange={(e) => updateDraft((current) => ({
                         ...current,
                         media: { ...current.media, audioPlaybackDevice: e.target.value },
+                      }))}
+                      className="w-full rounded border border-slate-300 px-2 py-2 text-sm text-slate-900"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-600">
+                    <div>Media Bind Host</div>
+                    <input
+                      value={draft.media.bindHost}
+                      onChange={(e) => updateDraft((current) => ({
+                        ...current,
+                        media: { ...current.media, bindHost: e.target.value },
+                      }))}
+                      className="w-full rounded border border-slate-300 px-2 py-2 text-sm text-slate-900"
+                    />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-600">
+                    <div>Face Bind Host</div>
+                    <input
+                      value={draft.face.bindHost}
+                      onChange={(e) => updateDraft((current) => ({
+                        ...current,
+                        face: { ...current.face, bindHost: e.target.value },
                       }))}
                       className="w-full rounded border border-slate-300 px-2 py-2 text-sm text-slate-900"
                     />
