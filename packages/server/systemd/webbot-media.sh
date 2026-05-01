@@ -4,6 +4,8 @@ set -euo pipefail
 JANUS_BINARY="/opt/janus/bin/janus"
 JANUS_HTML_DIR="/opt/janus/share/janus/html"
 JANUS_DEMO_PORT="8000"
+JANUS_CONFIG_DIR="/opt/janus/etc/janus"
+JANUS_RUNTIME_CONFIG_DIR="${HOME}/.config/webbot/janus"
 
 AUDIO_CAPTURE_DEVICE="plughw:CARD=UACDemoV10,DEV=0"
 AUDIO_CAPTURE_PORT="5005"
@@ -29,6 +31,7 @@ STATE_DIR="${HOME}/.local/state/webbot-media"
 FRAME_DIR="${STATE_DIR}/frames"
 mkdir -p "${STATE_DIR}"
 mkdir -p "${FRAME_DIR}"
+mkdir -p "${JANUS_RUNTIME_CONFIG_DIR}"
 
 PIDS=()
 declare -A PID_NAMES=()
@@ -36,6 +39,28 @@ declare -A PID_REQUIRED=()
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "${STATE_DIR}/service.log" >&2
+}
+
+prepare_janus_runtime_config() {
+  local main_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.jcfg"
+  local http_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.transport.http.jcfg"
+
+  if [[ -f "${JANUS_CONFIG_DIR}/janus.jcfg" ]]; then
+    cp "${JANUS_CONFIG_DIR}/janus.jcfg" "${main_cfg}"
+    sed -i \
+      -e 's/^[[:space:]]*stun_server[[:space:]]*=.*$/# stun_server disabled by webbot-media.sh/' \
+      -e 's/^[[:space:]]*stun_port[[:space:]]*=.*$/# stun_port disabled by webbot-media.sh/' \
+      "${main_cfg}"
+  fi
+
+  if [[ -f "${JANUS_CONFIG_DIR}/janus.transport.http.jcfg" ]]; then
+    cp "${JANUS_CONFIG_DIR}/janus.transport.http.jcfg" "${http_cfg}"
+    if grep -Eq '^[[:space:]]*#?[[:space:]]*ip[[:space:]]*=' "${http_cfg}"; then
+      sed -i 's/^[[:space:]]*#\?[[:space:]]*ip[[:space:]]*=.*$/\tip = "0.0.0.0"/' "${http_cfg}"
+    else
+      sed -i '/^[[:space:]]*port[[:space:]]*= 8088/a \	ip = "0.0.0.0"' "${http_cfg}"
+    fi
+  fi
 }
 
 cleanup_legacy_processes() {
@@ -147,7 +172,8 @@ alsa_device_available() {
 
 cleanup_legacy_processes
 
-start_process janus required bash -lc "exec ${JANUS_BINARY}"
+prepare_janus_runtime_config
+start_process janus required bash -lc "exec ${JANUS_BINARY} -F ${JANUS_RUNTIME_CONFIG_DIR}"
 if ! wait_for_port "8088"; then
   log "Janus did not open port 8088 in time"
   exit 1
