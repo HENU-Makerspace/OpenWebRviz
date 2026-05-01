@@ -10,7 +10,9 @@
 
 ## 结论
 
-这次 rosbridge 断连的根因不是 rosbridge 进程崩溃，也不是 nginx 配置错误，而是 Jetson 上作为云端出口的 Quectel EC200A / RNDIS USB 设备反复发生内核级 USB disconnect/re-enumeration。
+云端 `wss://qiuhua.ying-guang.com/rosbridge/` 断连的根因不是 rosbridge 进程崩溃，也不是 nginx 配置错误，而是 Jetson 上作为云端出口的 Quectel EC200A / RNDIS USB 设备反复发生内核级 USB disconnect/re-enumeration。
+
+2026-05-01 12:14 又确认了第二个独立问题：本地模式 `ws://192.168.1.58:9090` 也会断，是因为 Jetson 上 `async_slam_toolbox_node` 曾触发 OOM，systemd 将包含 rosbridge 和 system_manager 的旧 `jetson-ros-startup.service` 整体重启，导致 rosbridge 被牵连重启。
 
 实际链路是：
 
@@ -115,6 +117,40 @@ ssh -NT -o BindInterface=usb0 ... -R 127.0.0.1:19090:127.0.0.1:9090 root@182.43.
 
 因此云端 rosbridge 链路完全依赖 `usb0`。`usb0` 一掉，rosbridge 云端入口必断。
 
+### 6. 本地模式断连的独立证据：SLAM OOM 牵连 rosbridge
+
+本地模式下前端默认连接：
+
+```text
+ws://192.168.1.58:9090
+```
+
+Jetson 当前 `192.168.1.58` 是 `wlP1p1s0` WiFi 地址，不经过云服务器和 `usb0` reverse tunnel。
+
+内核日志：
+
+```text
+01:03:28 base_footprint_ invoked oom-killer
+01:03:28 Out of memory: Killed process 3605 (async_slam_tool) anon-rss:5837368kB
+```
+
+systemd 日志：
+
+```text
+01:03:28 jetson-ros-startup.service: A process of this unit has been killed by the OOM killer.
+01:04:40 jetson-ros-startup.service: Failed with result 'oom-kill'.
+01:04:46 jetson-ros-startup.service: Started Start ROS bridge and MQTT client on boot.
+```
+
+旧服务同时启动：
+
+```text
+rosbridge_server rosbridge_websocket_launch.xml
+jetson_node_pkg system_manager.launch.py
+```
+
+因此 SLAM OOM 后整个 unit 被重启，rosbridge PID 改变，本地 WebSocket 必然断开。
+
 ## 设备与拓扑
 
 当前 USB 设备：
@@ -161,7 +197,15 @@ call_services_in_new_thread = False
 send_action_goals_in_new_thread = False
 ```
 
-这可能导致服务调用卡住 rosbridge 主线程，但它不能解释云端 `19090 connection refused` 和 Jetson `usb0 USB disconnect`。它是后续要修的稳定性问题，不是这次 502/断线的根因。
+这可能导致服务调用卡住 rosbridge 主线程，但它不能解释云端 `19090 connection refused` 和 Jetson `usb0 USB disconnect`。它是独立稳定性问题。
+
+2026-05-01 12:14 已修复：
+
+```text
+call_services_in_new_thread = True
+send_action_goals_in_new_thread = True
+default_call_service_timeout = 5.0
+```
 
 ## 修复优先级
 
@@ -185,14 +229,30 @@ send_action_goals_in_new_thread = False
 
 ### P2：rosbridge 自身健壮性
 
-后续单独修：
+已完成：
 
-- 设置 `call_services_in_new_thread=true`。
-- 设置 `send_action_goals_in_new_thread=true`。
-- 设置非无限的 `default_call_service_timeout`。
+- 拆分旧 `jetson-ros-startup.service`。
+- 新增 `webbot-rosbridge.service`，只负责 rosbridge/rosapi。
+- 新增 `webbot-system-manager.service`，只负责 `/system/*` 管理入口。
+- rosbridge 启动参数改为非阻塞 service/action，并给 service call 设置 5 秒默认超时。
+- `webbot-rosbridge.service` 设置 `OOMScoreAdjust=-900`，降低被 OOM killer 选中的概率。
+- `webbot-system-manager.service` 设置 `OOMPolicy=continue`，避免子进程 OOM 直接把 system_manager unit 作为失败策略扩散。
 
-这能改善 UI 卡顿和 service/action 调用导致的假死，但不是当前 USB 断链的根因。
+这能改善 UI 卡顿和 service/action 调用导致的假死，也避免 SLAM OOM 牵连 rosbridge。
+
+验证：
+
+```text
+jetson-ros-startup.service: disabled / inactive
+webbot-rosbridge.service: enabled / active
+webbot-system-manager.service: enabled / active
+/rosbridge_websocket call_services_in_new_thread: True
+/rosbridge_websocket send_action_goals_in_new_thread: True
+/rosbridge_websocket default_call_service_timeout: 5.0
+```
+
+重启 `webbot-system-manager.service` 后，rosbridge 进程 PID 保持不变，说明隔离生效。
 
 ## 一句话定位
 
-当前 rosbridge “频繁断”的直接根因是 Jetson 的 `usb0` 蜂窝/RNDIS 设备被内核反复当作 USB 拔插，造成 SSH 反向隧道 `19090` 消失；浏览器看到的 rosbridge 断线只是这个底层 USB 网络断链的结果。
+云端 rosbridge “频繁断”的直接根因是 Jetson 的 `usb0` 蜂窝/RNDIS 设备被内核反复当作 USB 拔插，造成 SSH 反向隧道 `19090` 消失；本地 rosbridge 断连的直接根因之一是旧 systemd unit 中 SLAM OOM 牵连 rosbridge 重启。两者都会表现为前端 WebSocket 断线，但故障链不同。

@@ -42,60 +42,106 @@
 
 ## 2. 自启动服务
 
-### 2.1 系统级服务：`jetson-ros-startup.service`
+### 2.1 系统级服务：rosbridge 与 system_manager
 
-路径：
+2026-05-01 12:14 已拆分旧服务。旧服务当前状态：
 
 ```text
 /etc/systemd/system/jetson-ros-startup.service
+disabled / inactive
 ```
 
-状态：enabled / active。
+旧脚本备份保留在 Jetson：
 
-内容摘要：
+```text
+/home/nvidia/start_ros_services.sh.bak_split_services_*
+```
+
+当前系统级 ROS 常驻服务：
+
+```text
+/etc/systemd/system/webbot-rosbridge.service
+/etc/systemd/system/webbot-system-manager.service
+```
+
+`webbot-rosbridge.service`：
 
 ```ini
 User=nvidia
 WorkingDirectory=/home/nvidia
-ExecStart=/bin/bash /home/nvidia/start_ros_services.sh
+ExecStart=/bin/bash /home/nvidia/start_rosbridge.sh
 Restart=always
-RestartSec=5
+RestartSec=2
+OOMScoreAdjust=-900
 ```
 
-实际启动脚本：
+`/home/nvidia/start_rosbridge.sh`：
 
 ```bash
+source /opt/ros/humble/setup.bash
 source /home/nvidia/ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=1
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-nohup ros2 launch rosbridge_server rosbridge_websocket_launch.xml > /home/nvidia/rosbridge.log 2>&1 &
-sleep 3
+exec ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+  port:=9090 \
+  address:=0.0.0.0 \
+  call_services_in_new_thread:=true \
+  send_action_goals_in_new_thread:=true \
+  default_call_service_timeout:=5.0
+```
 
-nohup ros2 launch jetson_node_pkg system_manager.launch.py > /home/nvidia/sys_man.log 2>&1 &
-wait
+`webbot-system-manager.service`：
+
+```ini
+User=nvidia
+WorkingDirectory=/home/nvidia
+ExecStart=/bin/bash /home/nvidia/start_system_manager.sh
+Restart=always
+RestartSec=5
+OOMPolicy=continue
+```
+
+`/home/nvidia/start_system_manager.sh`：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/nvidia/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+exec ros2 launch jetson_node_pkg system_manager.launch.py
 ```
 
 作用：
 
-- 开机启动 rosbridge。
-- 开机启动 `jetson_node_pkg/system_manager.launch.py`，从而暴露 `/system/*` 服务给前端。
+- `webbot-rosbridge.service` 开机启动 rosbridge/rosapi。
+- `webbot-system-manager.service` 开机启动 `jetson_node_pkg/system_manager.launch.py`，从而暴露 `/system/*` 服务给前端。
+- 两者分属不同 systemd unit，SLAM/Nav 子进程 OOM 或 system_manager 重启不再牵连 rosbridge。
 
-潜在问题：
+拆分原因：
 
-- unit 描述写的是 “Start ROS bridge and MQTT client on boot”，但脚本实际没有启动 MQTT client；MQTT 只在导航 launch 里启动。
-- `ROS_DOMAIN_ID=1` 只在这个脚本里设置。`system_manager_node.py` 后续 `subprocess.Popen` 会继承该环境，所以当前链路可用；但如果手动用别的方式启动 system_manager，子 launch 可能进错 ROS domain。
-- rosbridge 使用默认参数，日志明确提示：
-  - `default_call_service_timeout = 0.0`：service call 可能无限阻塞。
-  - `call_services_in_new_thread = False`：service call 会阻塞 rosbridge 主线程。
-  - `send_action_goals_in_new_thread = False`：action goal 发送会阻塞主线程。
-- 前端所有 `/system/*` 服务、Nav2 action 都经 rosbridge，因此这些默认值会影响 UI 卡顿和超时恢复。
+- 旧 `jetson-ros-startup.service` 把 rosbridge 与 system_manager 放在同一个 unit。
+- `async_slam_toolbox_node` 曾吃到约 5.8GB RSS 并触发 OOM。
+- systemd 将旧 unit 判为 `oom-kill` 后重启，rosbridge 被牵连重启，本地/云端 WebSocket 都会断。
 
-建议：
+已验证：
 
-- 给 rosbridge launch 增加参数：service timeout、service/action new thread。
-- 在文档中明确 `ROS_DOMAIN_ID=1` 是机器人运行前提。
-- 修正 unit 描述，避免误以为 MQTT 已常驻。
+```text
+jetson-ros-startup.service: disabled / inactive
+webbot-rosbridge.service: enabled / active
+webbot-system-manager.service: enabled / active
+/rosbridge_websocket call_services_in_new_thread: True
+/rosbridge_websocket send_action_goals_in_new_thread: True
+/rosbridge_websocket default_call_service_timeout: 5.0
+```
+
+重启 `webbot-system-manager.service` 后，rosbridge PID 保持不变。
+
+遗留问题：
+
+- `async_slam_toolbox_node` 的 OOM 根因仍需继续处理；本次改动只是阻断它牵连 rosbridge。
+- MQTT 仍不是常驻，只在导航 launch 里启动。
 
 ### 2.2 用户级服务：`webbot-*`
 
@@ -661,9 +707,9 @@ launch 里的 `_resolve_params_file()` 逻辑是：只要 explicit `params_file`
 - 或把 `stop_guard` 纳入 `nav_all.launch.py` 和 `stand_nav_launch.py`。
 - stand/crouch 的 stop 高度需要匹配当前姿态，不能固定 `stand_mode=True/up=1.0`。
 
-### 5.3 rosbridge 当前 service/action 调用可能阻塞主线程
+### 5.3 rosbridge service/action 调用曾阻塞主线程，已修复
 
-证据：
+旧证据：
 
 `/home/nvidia/rosbridge.log`：
 
@@ -673,17 +719,16 @@ call_services_in_new_thread = False
 send_action_goals_in_new_thread = False
 ```
 
-影响：
+旧影响：
 
 - 前端点击启动 SLAM/导航/保存地图时，如果 service 长时间不返回，rosbridge 可能阻塞。
 - action 目标发送也可能影响 rosbridge 对其他消息的处理。
 
-建议修复：
+2026-05-01 12:14 已修复：
 
-- 自定义 rosbridge launch 参数：
-  - `default_call_service_timeout: 10.0`
-  - `call_services_in_new_thread: true`
-  - `send_action_goals_in_new_thread: true`
+- `default_call_service_timeout: 5.0`
+- `call_services_in_new_thread: true`
+- `send_action_goals_in_new_thread: true`
 - 前端也保留自己的超时和错误展示。
 
 ### 5.4 音频设备配置与当前机器人硬件不匹配

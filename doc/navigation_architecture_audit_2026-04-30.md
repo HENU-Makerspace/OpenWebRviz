@@ -244,23 +244,45 @@ Lookup would require extrapolation
 
 ### 1.1 systemd 自启动
 
-系统级正在运行的 ROS 相关服务只有：
+2026-05-01 12:14 起，系统级 ROS 常驻服务已拆为两个：
+
+```text
+/etc/systemd/system/webbot-rosbridge.service
+/etc/systemd/system/webbot-system-manager.service
+```
+
+旧服务已停用：
 
 ```text
 /etc/systemd/system/jetson-ros-startup.service
+disabled / inactive
 ```
 
-服务内容：
+`webbot-rosbridge.service` 只负责 rosbridge/rosapi：
 
 ```ini
 [Service]
 Type=simple
 User=nvidia
 WorkingDirectory=/home/nvidia
-ExecStart=/bin/bash /home/nvidia/start_ros_services.sh
+ExecStart=/bin/bash /home/nvidia/start_rosbridge.sh
+Restart=always
+Environment=HOME=/home/nvidia
+RestartSec=2
+OOMScoreAdjust=-900
+```
+
+`webbot-system-manager.service` 只负责 `/system/*` 管理入口：
+
+```ini
+[Service]
+Type=simple
+User=nvidia
+WorkingDirectory=/home/nvidia
+ExecStart=/bin/bash /home/nvidia/start_system_manager.sh
 Restart=always
 RestartSec=5
-Environment=HOME=/home/nvidia
+OOMPolicy=continue
 ```
 
 用户级正在运行的是媒体和反向隧道服务：
@@ -274,20 +296,33 @@ webbot-reverse-tunnel.service
 
 它们不直接启动 Nav2/SLAM，只负责 Janus/视频/SSH 反向隧道。
 
-### 1.2 `/home/nvidia/start_ros_services.sh`
+### 1.2 常驻启动脚本
 
-当前脚本：
+rosbridge：
 
 ```bash
+source /opt/ros/humble/setup.bash
 source /home/nvidia/ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=1
 export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
 
-nohup ros2 launch rosbridge_server rosbridge_websocket_launch.xml > /home/nvidia/rosbridge.log 2>&1 &
-sleep 3
+exec ros2 launch rosbridge_server rosbridge_websocket_launch.xml \
+  port:=9090 \
+  address:=0.0.0.0 \
+  call_services_in_new_thread:=true \
+  send_action_goals_in_new_thread:=true \
+  default_call_service_timeout:=5.0
+```
 
-nohup ros2 launch jetson_node_pkg system_manager.launch.py > /home/nvidia/sys_man.log 2>&1 &
-wait
+system_manager：
+
+```bash
+source /opt/ros/humble/setup.bash
+source /home/nvidia/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=1
+export RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+
+exec ros2 launch jetson_node_pkg system_manager.launch.py
 ```
 
 也就是说，开机常驻只有两类节点：
@@ -303,6 +338,12 @@ wait
 ```
 
 导航、SLAM、Livox、FastLIO、AMCL、Nav2 都不是常驻，而是由前端通过 rosbridge 调 Jetson 上的 `/system/start_*` 服务动态拉起。
+
+拆分原因：
+
+- 旧 `jetson-ros-startup.service` 将 rosbridge 与 system_manager 放在同一个 unit。
+- `async_slam_toolbox_node` 曾触发 OOM，旧 unit 被 systemd 重启，rosbridge 也被牵连重启。
+- 拆分后，重启 `webbot-system-manager.service` 不再影响 rosbridge PID。
 
 ### 1.3 前端到 Jetson 的调用链
 

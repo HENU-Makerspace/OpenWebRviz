@@ -1,0 +1,17 @@
+[Unit]
+Description=WebBot ROS Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nvidia
+WorkingDirectory=/home/nvidia
+Environment=HOME=/home/nvidia
+ExecStart=/bin/bash /home/nvidia/start_rosbridge.sh
+Restart=always
+RestartSec=2
+OOMScoreAdjust=-900
+
+[Install]
+WantedBy=multi-user.target

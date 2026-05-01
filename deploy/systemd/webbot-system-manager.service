@@ -1,0 +1,17 @@
+[Unit]
+Description=WebBot ROS System Manager
+After=network-online.target webbot-rosbridge.service
+Wants=network-online.target webbot-rosbridge.service
+
+[Service]
+Type=simple
+User=nvidia
+WorkingDirectory=/home/nvidia
+Environment=HOME=/home/nvidia
+ExecStart=/bin/bash /home/nvidia/start_system_manager.sh
+Restart=always
+RestartSec=5
+OOMPolicy=continue
+
+[Install]
+WantedBy=multi-user.target
