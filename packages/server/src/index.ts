@@ -192,36 +192,25 @@ VIDEO_BITRATE=${shellQuote(String(asNumber(media.video_bitrate, 4000)))}
 `;
 }
 
-async function writeRemoteFile(host: string, remotePath: string, content: string) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webbot-remote-'));
-  const localPath = path.join(tempDir, path.basename(remotePath));
-
-  try {
-    fs.writeFileSync(localPath, content, 'utf-8');
-    const parentDir = path.posix.dirname(remotePath);
-    await execAsync(`ssh ${host} mkdir -p ${shellQuote(parentDir)}`);
-    await execAsync(`scp ${shellQuote(localPath)} ${host}:${shellQuote(remotePath)}`);
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-}
-
-async function ensureRemoteExecutable(host: string, remotePath: string) {
-  await execAsync(`ssh ${host} chmod +x ${shellQuote(remotePath)}`);
-}
-
-async function restartRemoteServices(host: string, serviceNames: string[]) {
-  const uniqueNames = Array.from(new Set(serviceNames.filter(Boolean)));
-  if (uniqueNames.length === 0) {
+async function writeRemoteFiles(host: string, files: Array<{ remotePath: string; content: string }>) {
+  if (files.length === 0) {
     return;
   }
 
-  const command = [
-    'systemctl --user daemon-reload',
-    `systemctl --user restart ${uniqueNames.map(shellQuote).join(' ')}`,
-  ].join(' && ');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'webbot-remote-batch-'));
 
-  await execAsync(`ssh ${host} ${shellQuote(command)}`);
+  try {
+    const parentDirs = Array.from(new Set(files.map(({ remotePath }) => path.posix.dirname(remotePath))));
+    await execAsync(`ssh ${host} mkdir -p ${parentDirs.map(shellQuote).join(' ')}`);
+
+    for (const { remotePath, content } of files) {
+      const localPath = path.join(tempDir, path.basename(remotePath));
+      fs.writeFileSync(localPath, content, 'utf-8');
+      await execAsync(`scp ${shellQuote(localPath)} ${host}:${shellQuote(remotePath)}`);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 }
 
 // Server configuration
@@ -649,7 +638,7 @@ app.post('/api/settings', async (c) => {
 
 app.post('/api/settings/apply-jetson', async (c) => {
   try {
-    const latest = loadRobotConfig(path.join(process.cwd(), 'config'), configProfile);
+    const latest = loadCurrentRobotConfig();
     const latestConfig = latest.config;
     const jetsonHost = asString(latestConfig.jetson?.host, asString(JETSON_HOST, '192.168.1.58'));
     const sshTarget = `${asString(latestConfig.jetson?.user, 'nvidia')}@${jetsonHost}`;
@@ -693,6 +682,7 @@ app.post('/api/settings/apply-jetson', async (c) => {
     const faceServiceName = asString(latestConfig.face?.service_name, 'webbot-face.service');
     const videoServiceName = asString(latestConfig.media?.video_service_name, 'webbot-video.service');
     const mediaServiceName = asString(latestConfig.media?.service_name, 'webbot-media.service');
+    const restartStateFile = '/tmp/webbot-service-state.json';
 
     const mediaControlScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-media-control.py'), 'utf-8');
     const faceScript = fs.readFileSync(path.join(process.cwd(), 'systemd', 'webbot-face-service.py'), 'utf-8');
@@ -701,30 +691,42 @@ app.post('/api/settings/apply-jetson', async (c) => {
 
     const mediaUnit = renderMediaUnit();
     const videoUnit = renderVideoUnit();
-    await execAsync(`ssh ${sshTarget} mkdir -p ${shellQuote('/home/nvidia/.config/webbot')} ${shellQuote('/home/nvidia/.config/systemd/user')} ${shellQuote('/home/nvidia/bin')}`);
+    const mediaEnv = renderMediaEnv(latestConfig);
+    const videoEnv = renderVideoEnv(latestConfig);
 
-    await writeRemoteFile(sshTarget, mediaUnitPath, mediaUnit);
-    await writeRemoteFile(sshTarget, videoUnitPath, videoUnit);
-    await writeRemoteFile(sshTarget, mediaControlUnitPath, renderMediaControlUnit(latestConfig));
-    await writeRemoteFile(sshTarget, faceUnitPath, renderFaceUnit(latestConfig));
-    await writeRemoteFile(sshTarget, mediaScriptPath, mediaScript);
-    await writeRemoteFile(sshTarget, videoScriptPath, videoScript);
-    await writeRemoteFile(sshTarget, mediaControlScriptPath, mediaControlScript);
-    await writeRemoteFile(sshTarget, faceScriptPath, faceScript);
-    await writeRemoteFile(sshTarget, mediaEnvPath, renderMediaEnv(latestConfig));
-    await writeRemoteFile(sshTarget, videoEnvPath, renderVideoEnv(latestConfig));
-
-    await ensureRemoteExecutable(sshTarget, mediaScriptPath);
-    await ensureRemoteExecutable(sshTarget, videoScriptPath);
-    await ensureRemoteExecutable(sshTarget, mediaControlScriptPath);
-    await ensureRemoteExecutable(sshTarget, faceScriptPath);
-
-    await restartRemoteServices(sshTarget, [
-      mediaServiceName,
-      mediaControlServiceName,
-      faceServiceName,
-      videoServiceName,
+    await writeRemoteFiles(sshTarget, [
+      { remotePath: mediaUnitPath, content: mediaUnit },
+      { remotePath: videoUnitPath, content: videoUnit },
+      { remotePath: mediaControlUnitPath, content: renderMediaControlUnit(latestConfig) },
+      { remotePath: faceUnitPath, content: renderFaceUnit(latestConfig) },
+      { remotePath: mediaScriptPath, content: mediaScript },
+      { remotePath: videoScriptPath, content: videoScript },
+      { remotePath: mediaControlScriptPath, content: mediaControlScript },
+      { remotePath: faceScriptPath, content: faceScript },
+      { remotePath: mediaEnvPath, content: mediaEnv },
+      { remotePath: videoEnvPath, content: videoEnv },
     ]);
+
+    const remoteApplyScript = [
+      'import json, subprocess',
+      `state_path = ${JSON.stringify(restartStateFile)}`,
+      `services = ${JSON.stringify([mediaServiceName, mediaControlServiceName, faceServiceName, videoServiceName])}`,
+      'states = {}',
+      'for service in services:',
+      "    result = subprocess.run(['systemctl', '--user', 'is-active', service], capture_output=True, text=True, check=False)",
+      "    states[service] = result.stdout.strip() == 'active'",
+      `subprocess.run(['chmod', '+x', ${JSON.stringify(mediaScriptPath)}, ${JSON.stringify(videoScriptPath)}, ${JSON.stringify(mediaControlScriptPath)}, ${JSON.stringify(faceScriptPath)}], check=False)`,
+      "subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False)",
+      `always_restart = ${JSON.stringify([mediaServiceName, mediaControlServiceName])}`,
+      `restart_if_active = ${JSON.stringify([faceServiceName, videoServiceName])}`,
+      'for service in always_restart:',
+      "    subprocess.run(['systemctl', '--user', 'restart', service], check=False)",
+      'for service in restart_if_active:',
+      '    if states.get(service):',
+      "        subprocess.run(['systemctl', '--user', 'restart', service], check=False)",
+    ].join('; ');
+
+    await execAsync(`ssh ${sshTarget} python3 -c ${shellQuote(remoteApplyScript)}`);
 
     const { stdout, stderr } = await execAsync(
       `ssh ${sshTarget} ${shellQuote(
@@ -757,8 +759,8 @@ app.post('/api/settings/apply-jetson', async (c) => {
         videoServiceExecStart: 'ExecStart=%h/bin/webbot-video.sh',
         mediaControlExecStart: renderMediaControlExecStart(latestConfig),
         faceExecStart: renderFaceExecStart(latestConfig),
-        mediaEnvironment: renderMediaEnv(latestConfig),
-        videoEnvironment: renderVideoEnv(latestConfig),
+        mediaEnvironment: mediaEnv,
+        videoEnvironment: videoEnv,
       },
       stdout: stdout.trim(),
       stderr: stderr.trim(),
@@ -1164,5 +1166,6 @@ console.log(`Server running on http://0.0.0.0:${PORT}`);
 export default {
   port: PORT,
   hostname: '0.0.0.0',
+  idleTimeout: 60,
   fetch: app.fetch,
 };
