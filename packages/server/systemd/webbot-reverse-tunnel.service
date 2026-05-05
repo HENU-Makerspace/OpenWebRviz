@@ -6,11 +6,10 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-Environment=SSH_KEY=%h/.ssh/id_ed25519_webbot_cloud
 SyslogIdentifier=webbot-reverse-tunnel
 StandardOutput=journal
 StandardError=journal
-ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o BindInterface=usb2 -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o TCPKeepAlive=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o IPQoS=throughput -o StrictHostKeyChecking=accept-new -i ${SSH_KEY} -R 127.0.0.1:19090:127.0.0.1:9090 root@182.43.86.126
+ExecStart=%h/bin/webbot-tunnel.sh %h/.ssh/id_ed25519_webbot_cloud root@182.43.86.126 -R 127.0.0.1:19090:127.0.0.1:9090
 Restart=always
 RestartSec=3
 
