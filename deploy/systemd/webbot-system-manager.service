@@ -8,10 +8,14 @@ Type=simple
 User=nvidia
 WorkingDirectory=/home/nvidia
 Environment=HOME=/home/nvidia
+ExecStartPre=/bin/bash /home/nvidia/webbot-cleanup-ros.sh
 ExecStart=/bin/bash /home/nvidia/start_system_manager.sh
+ExecStopPost=/bin/bash /home/nvidia/webbot-cleanup-ros.sh
 Restart=always
 RestartSec=5
 OOMPolicy=continue
+KillMode=control-group
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target
