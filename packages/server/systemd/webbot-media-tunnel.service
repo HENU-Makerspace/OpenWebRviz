@@ -10,7 +10,7 @@ Environment=SSH_KEY=%h/.ssh/id_ed25519_webbot_cloud
 SyslogIdentifier=webbot-media-tunnel
 StandardOutput=journal
 StandardError=journal
-ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o BindInterface=usb0 -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o TCPKeepAlive=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o IPQoS=throughput -o StrictHostKeyChecking=accept-new -i ${SSH_KEY} -R 127.0.0.1:18088:127.0.0.1:8088 -R 127.0.0.1:18000:127.0.0.1:8000 -R 127.0.0.1:19100:127.0.0.1:19100 -R 127.0.0.1:19110:127.0.0.1:19110 root@182.43.86.126
+ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o BindInterface=usb2 -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ConnectionAttempts=1 -o TCPKeepAlive=yes -o ServerAliveInterval=10 -o ServerAliveCountMax=2 -o IPQoS=throughput -o StrictHostKeyChecking=accept-new -i ${SSH_KEY} -R 127.0.0.1:18088:127.0.0.1:8088 -R 127.0.0.1:18000:127.0.0.1:8000 -R 127.0.0.1:19100:127.0.0.1:19100 -R 127.0.0.1:19110:127.0.0.1:19110 root@182.43.86.126
 Restart=always
 RestartSec=3
 
