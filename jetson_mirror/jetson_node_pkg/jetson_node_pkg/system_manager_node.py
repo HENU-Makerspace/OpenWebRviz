@@ -110,6 +110,7 @@ class SystemManager(Node):
         self.declare_parameter('cmd_vel_timeout_sec', 0.5)
         self.declare_parameter('cmd_vel_stop_period_sec', 0.2)
         self.declare_parameter('server_url', 'http://182.43.86.126:4001')
+        self.declare_parameter('cleanup_script', '/home/nvidia/webbot-cleanup-ros.sh')
 
         self.maps_dir = self.get_parameter('maps_dir').value
         self.slam_package = self.get_parameter('slam_package').value
@@ -119,6 +120,7 @@ class SystemManager(Node):
         self.stand_nav_launch_file = self.get_parameter('stand_nav_launch_file').value
         self.nav2_params_file = self.get_parameter('nav2_params_file').value
         self.slam_params_file = self.get_parameter('slam_params_file').value
+        self.cleanup_script = self.get_parameter('cleanup_script').value
         self.cmd_vel_timeout_sec = float(self.get_parameter('cmd_vel_timeout_sec').value)
         self.cmd_vel_stop_period_sec = float(self.get_parameter('cmd_vel_stop_period_sec').value)
 
@@ -154,6 +156,51 @@ class SystemManager(Node):
         self.create_service(Trigger, '/system/status', self.handle_status)
 
         self.get_logger().info('System Manager is ready.')
+
+    def cleanup_residual_processes(self):
+        cleanup_script = str(self.cleanup_script or '').strip()
+        if cleanup_script and os.path.exists(cleanup_script):
+            try:
+                subprocess.run(['/bin/bash', cleanup_script], capture_output=True, timeout=20)
+                return
+            except Exception as exc:
+                self.get_logger().warn(f'Cleanup script failed, falling back to pkill set: {exc}')
+
+        patterns = [
+            'mapping_all.launch.py',
+            'nav_all.launch.py',
+            'stand_nav_launch.py',
+            'slam_toolbox',
+            'async_slam_toolbox_node',
+            'online_async',
+            'fastlio_mapping',
+            'livox_ros_driver2',
+            'livox_ros_driver2_node',
+            'pointcloud_to_laserscan',
+            'pointcloud_to_laserscan_node',
+            'base_footprint_projector',
+            'cmd_vel_converter',
+            'stand_cmd_vel_converter',
+            'amcl',
+            'map_server',
+            'planner_server',
+            'controller_server',
+            'behavior_server',
+            'smoother_server',
+            'bt_navigator',
+            'lifecycle_manager',
+            'waypoint_follower',
+            'velocity_smoother',
+            'recoveries_server',
+            'robot_state_publisher',
+            'nav2_bringup',
+            'navigation_launch',
+            'gz sim',
+        ]
+        for sig in ('TERM', 'KILL'):
+            for pattern in patterns:
+                subprocess.run(['pkill', f'-{sig}', '-f', pattern], capture_output=True)
+            time.sleep(1)
 
     def build_ros_command(self, args):
         quoted_args = ' '.join(shlex.quote(arg) for arg in args)
@@ -196,26 +243,7 @@ class SystemManager(Node):
 
         if process_name_to_kill == 'navigation':
             self.disable_nav_motion_watchdog()
-
-        # Also kill any orphaned processes by name
-        if process_name_to_kill == 'slam':
-            slam_patterns = [
-                'mapping_all.launch.py',
-                'slam_toolbox',
-                'online_async',
-                'fastlio_mapping',
-                'livox_ros_driver2_node',
-                'pointcloud_to_laserscan_node',
-                'pointcloud_to_laserscan',
-                'body_to_lidar',
-            ]
-            for pattern in slam_patterns:
-                subprocess.run(['pkill', '-f', pattern], capture_output=True)
-        elif process_name_to_kill == 'navigation':
-            subprocess.run(['pkill', '-f', 'nav2_bringup'], capture_output=True)
-            subprocess.run(['pkill', '-f', 'navigation_launch'], capture_output=True)
-            subprocess.run(['pkill', '-f', 'robot_state_publisher'], capture_output=True)
-            subprocess.run(['pkill', '-f', 'gz sim'], capture_output=True)
+        self.cleanup_residual_processes()
 
     def enable_nav_motion_watchdog(self, stance):
         self.nav_motion_watchdog_active = True
