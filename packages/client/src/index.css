@@ -16,6 +16,87 @@ body {
 }
 
 @layer components {
+  .tech-panel-frame {
+    background:
+      linear-gradient(135deg, rgb(8 47 73 / 0.46), rgb(2 6 23 / 0.34) 42%, rgb(12 74 110 / 0.34)),
+      rgb(8 47 73 / 0.22);
+  }
+
+  .tech-panel-frame::before {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    pointer-events: none;
+    border: 1px solid rgb(125 211 252 / 0.12);
+    border-radius: 0.45rem;
+  }
+
+  .tech-corner {
+    position: absolute;
+    z-index: 1;
+    width: 22px;
+    height: 22px;
+    pointer-events: none;
+    border-color: rgb(56 189 248 / 0.9);
+    filter: drop-shadow(0 0 6px rgb(14 165 233 / 0.45));
+  }
+
+  .tech-corner-tl {
+    left: 7px;
+    top: 7px;
+    border-left-width: 2px;
+    border-top-width: 2px;
+  }
+
+  .tech-corner-tr {
+    right: 7px;
+    top: 7px;
+    border-right-width: 2px;
+    border-top-width: 2px;
+  }
+
+  .tech-corner-bl {
+    bottom: 7px;
+    left: 7px;
+    border-bottom-width: 2px;
+    border-left-width: 2px;
+  }
+
+  .tech-corner-br {
+    bottom: 7px;
+    right: 7px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+  }
+
+  .map-frame::before,
+  .map-frame::after {
+    content: "";
+    position: absolute;
+    z-index: 2;
+    width: 64px;
+    height: 64px;
+    pointer-events: none;
+    border-color: rgb(56 189 248 / 0.85);
+    filter: drop-shadow(0 0 8px rgb(14 165 233 / 0.5));
+  }
+
+  .map-frame::before {
+    left: 9px;
+    top: 9px;
+    border-left-width: 2px;
+    border-top-width: 2px;
+    border-top-left-radius: 0.75rem;
+  }
+
+  .map-frame::after {
+    bottom: 9px;
+    right: 9px;
+    border-bottom-width: 2px;
+    border-right-width: 2px;
+    border-bottom-right-radius: 0.75rem;
+  }
+
   .operator-panel h3,
   .operator-panel h4,
   .operator-panel .text-gray-500,
@@ -28,8 +109,8 @@ body {
   .operator-panel .bg-gray-200,
   .operator-panel .bg-slate-50,
   .operator-panel .bg-slate-100 {
-    border-color: rgb(8 145 178 / 0.25);
-    background-color: rgb(2 6 23 / 0.62);
+    border-color: rgb(34 211 238 / 0.22);
+    background-color: rgb(8 47 73 / 0.30);
     color: rgb(226 232 240);
   }
 
@@ -37,18 +118,18 @@ body {
   .operator-panel .border-t,
   .operator-panel .border-slate-200,
   .operator-panel .border-gray-300 {
-    border-color: rgb(34 211 238 / 0.22);
+    border-color: rgb(103 232 249 / 0.24);
   }
 
   .operator-panel select,
   .operator-panel input {
-    border-color: rgb(34 211 238 / 0.28);
-    background-color: rgb(2 6 23 / 0.72);
+    border-color: rgb(103 232 249 / 0.28);
+    background-color: rgb(8 47 73 / 0.34);
     color: rgb(226 232 240);
   }
 
   .operator-panel button {
-    box-shadow: 0 0 14px rgb(14 165 233 / 0.1);
+    box-shadow: 0 0 12px rgb(14 165 233 / 0.08);
   }
 
   .media-panel video {
@@ -56,11 +137,11 @@ body {
   }
 
   .media-panel .bg-slate-50 {
-    background-color: rgb(2 6 23 / 0.72);
+    background-color: rgb(8 47 73 / 0.30);
   }
 
   .media-panel .border-slate-200 {
-    border-color: rgb(34 211 238 / 0.24);
+    border-color: rgb(103 232 249 / 0.24);
   }
 
   .media-panel .text-slate-600 {

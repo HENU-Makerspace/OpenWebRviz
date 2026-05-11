@@ -106,8 +106,12 @@ function TechPanel({
   action?: React.ReactNode;
 }) {
   return (
-    <section className={`relative overflow-hidden rounded-lg border border-cyan-400/45 bg-slate-950/70 shadow-[0_0_28px_rgba(14,165,233,0.18)] backdrop-blur-md ${className}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(6,182,212,0.16),transparent_42%,rgba(59,130,246,0.12))]" />
+    <section className={`tech-panel-frame relative overflow-hidden rounded-lg border border-cyan-300/55 bg-cyan-950/38 shadow-[0_0_22px_rgba(14,165,233,0.16)] backdrop-blur-[3px] ${className}`}>
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(6,182,212,0.14),rgba(8,47,73,0.18)_42%,rgba(59,130,246,0.10))]" />
+      <span className="tech-corner tech-corner-tl" />
+      <span className="tech-corner tech-corner-tr" />
+      <span className="tech-corner tech-corner-bl" />
+      <span className="tech-corner tech-corner-br" />
       <div className="pointer-events-none absolute left-0 top-4 h-6 w-0.5 bg-cyan-300" />
       {(title || action) && (
         <div className="relative flex items-center justify-between border-b border-cyan-400/15 px-4 py-3">
@@ -139,8 +143,8 @@ function TopModeButton({
       onClick={onClick}
       className={`group flex min-w-36 items-center justify-center gap-2 border border-cyan-500/35 px-7 py-3 text-left transition ${
         active
-          ? 'bg-cyan-500/18 text-cyan-200 shadow-[0_0_22px_rgba(6,182,212,0.32)]'
-          : 'bg-slate-950/55 text-slate-300 hover:bg-cyan-500/10'
+          ? 'bg-cyan-500/16 text-cyan-100 shadow-[0_0_18px_rgba(6,182,212,0.24)]'
+          : 'bg-slate-950/38 text-slate-300 hover:bg-cyan-500/12'
       }`}
     >
       <Icon className={`h-4 w-4 ${active ? 'text-cyan-300' : 'text-slate-500 group-hover:text-cyan-300'}`} />
@@ -158,7 +162,7 @@ function MetricBar({ label, value, color }: { label: string; value: string; colo
   return (
     <div className="grid grid-cols-[3.5rem_1fr_3.5rem] items-center gap-2 text-xs text-slate-200">
       <span>{label}</span>
-      <div className="h-1.5 overflow-hidden rounded-full bg-slate-700/80">
+      <div className="h-1.5 overflow-hidden rounded-full bg-slate-700/55">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${numericValue}%` }} />
       </div>
       <span className="text-right text-slate-100">{value}</span>
@@ -172,8 +176,8 @@ function MapToolButton({ icon: Icon, active = false }: { icon: React.ComponentTy
       type="button"
       className={`flex h-10 w-10 items-center justify-center rounded-md border transition ${
         active
-          ? 'border-violet-400/70 bg-violet-500/40 text-white shadow-[0_0_18px_rgba(168,85,247,0.35)]'
-          : 'border-cyan-400/35 bg-slate-950/65 text-cyan-100 hover:bg-cyan-500/15'
+          ? 'border-violet-300/70 bg-violet-500/30 text-white shadow-[0_0_16px_rgba(168,85,247,0.28)]'
+          : 'border-cyan-300/38 bg-slate-950/44 text-cyan-100 hover:bg-cyan-500/14'
       }`}
     >
       <Icon className="h-4 w-4" />
@@ -839,8 +843,8 @@ function AppContent() {
       className="relative h-screen overflow-hidden bg-slate-950 text-slate-100"
       style={{ backgroundImage: 'url(' + backgroundImage + ')' }}
     >
-      <div className="absolute inset-0 bg-slate-950/50" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(14,165,233,0.26),transparent_34%),linear-gradient(90deg,rgba(2,6,23,0.76),rgba(2,6,23,0.28)_45%,rgba(2,6,23,0.82))]" />
+      <div className="absolute inset-0 bg-slate-950/24" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_20%,rgba(14,165,233,0.18),transparent_38%),linear-gradient(90deg,rgba(2,6,23,0.54),rgba(2,6,23,0.18)_45%,rgba(2,6,23,0.62))]" />
 
       <div className="relative z-10 flex h-full flex-col gap-3 p-4">
         <header className="grid grid-cols-[320px_1fr_520px] items-center gap-5">
@@ -854,7 +858,7 @@ function AppContent() {
             </div>
           </div>
 
-          <nav className="mx-auto flex overflow-hidden rounded-lg border border-cyan-500/35 bg-slate-950/55">
+          <nav className="mx-auto flex overflow-hidden rounded-lg border border-cyan-400/38 bg-slate-950/36 shadow-[0_0_18px_rgba(14,165,233,0.10)]">
             <TopModeButton active={activeConsoleTab === 'navigation'} title="导航模式" subtitle="Navigation" icon={Route} onClick={() => handleModeChange('navigation')} />
             <TopModeButton active={activeConsoleTab === 'teleop'} title="遥操作" subtitle="Teleop" icon={Gamepad2} onClick={() => handleModeChange('teleop')} />
             <button
@@ -862,8 +866,8 @@ function AppContent() {
               onClick={() => setActiveConsoleTab('broadcast')}
               className={`flex min-w-36 items-center justify-center gap-2 border-l border-cyan-500/25 px-7 py-3 transition ${
                 activeConsoleTab === 'broadcast'
-                  ? 'bg-cyan-500/18 text-cyan-200 shadow-[0_0_22px_rgba(6,182,212,0.32)]'
-                  : 'text-slate-300 hover:bg-cyan-500/10'
+                  ? 'bg-cyan-500/16 text-cyan-100 shadow-[0_0_18px_rgba(6,182,212,0.24)]'
+                  : 'text-slate-300 hover:bg-cyan-500/12'
               }`}
             >
               <Radio className="h-4 w-4 text-slate-500" />
@@ -871,25 +875,25 @@ function AppContent() {
             </button>
           </nav>
 
-          <div className="flex items-center justify-end gap-3 rounded-lg border border-cyan-500/30 bg-slate-950/65 px-4 py-3 shadow-[0_0_24px_rgba(14,165,233,0.14)] backdrop-blur">
-            <div className={['flex items-center gap-2 text-sm', isConnected ? 'text-emerald-300' : 'text-slate-300'].join(' ')}>
+          <div className="flex min-w-0 flex-nowrap items-center justify-end gap-3 overflow-hidden rounded-lg border border-cyan-400/34 bg-cyan-950/36 px-4 py-3 shadow-[0_0_18px_rgba(14,165,233,0.10)] backdrop-blur-[3px]">
+            <div className={['flex shrink-0 items-center gap-2 whitespace-nowrap text-sm', isConnected ? 'text-emerald-300' : 'text-slate-300'].join(' ')}>
               <ConnectionIcon className="h-4 w-4" />
               <span>{connectionLabel}</span>
               <span className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Connected</span>
             </div>
             {rosError && (
-              <div className="max-w-40 truncate text-xs text-red-300" title={rosError}>
+              <div className="min-w-0 max-w-36 truncate text-xs text-red-300" title={rosError}>
                 {rosError}
               </div>
             )}
             <div className="h-7 w-px bg-cyan-500/25" />
-            <span className="text-sm text-slate-300">{reconnectCount || 0} 次尝试</span>
+            <span className="shrink-0 whitespace-nowrap text-sm text-slate-300">{reconnectCount || 0} 次尝试</span>
             <div className="h-7 w-px bg-cyan-500/25" />
-            <button type="button" onClick={() => setShowDebug(!showDebug)} className={['inline-flex items-center gap-2 rounded-full px-2 py-1 text-sm transition', showDebug ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-300 hover:bg-cyan-500/10'].join(' ')}>
+            <button type="button" onClick={() => setShowDebug(!showDebug)} className={['inline-flex shrink-0 items-center gap-2 rounded-full px-2 py-1 text-sm transition', showDebug ? 'bg-cyan-500/20 text-cyan-200' : 'text-slate-300 hover:bg-cyan-500/12'].join(' ')}>
               调试模式
               <span className={['h-5 w-9 rounded-full p-0.5 transition', showDebug ? 'bg-cyan-400/80' : 'bg-slate-600'].join(' ')}><span className={['block h-4 w-4 rounded-full bg-white transition', showDebug ? 'translate-x-4' : ''].join(' ')} /></span>
             </button>
-            <button type="button" onClick={() => setShowSettings(true)} className="rounded-md p-2 text-slate-300 transition hover:bg-cyan-500/15 hover:text-cyan-200" title="设备设置"><Settings className="h-5 w-5" /></button>
+            <button type="button" onClick={() => setShowSettings(true)} className="shrink-0 rounded-md p-2 text-slate-300 transition hover:bg-cyan-500/15 hover:text-cyan-200" title="设备设置"><Settings className="h-5 w-5" /></button>
           </div>
         </header>
 
@@ -910,17 +914,32 @@ function AppContent() {
                 ))}
               </div>
             </TechPanel>
-            <TechPanel><div className="grid grid-cols-2 gap-3 text-sm text-slate-300"><div><div className="text-slate-500">机器人 ID</div><div className="text-lg font-semibold text-white">RB-042</div></div><div><div className="text-slate-500">运行时长</div><div className="text-lg font-semibold text-white">02:14:36</div></div></div></TechPanel>
+            <TechPanel title="最近活动" className="mt-auto">
+              <div className="space-y-3 text-sm text-slate-300">
+                {[
+                  ['16:32:11', '设置初始位姿', 'bg-violet-400'],
+                  ['16:32:21', '接收到目标点', 'bg-yellow-400'],
+                  ['16:32:21', '路径规划中...', 'bg-yellow-400'],
+                  ['16:32:22', isConnected ? '机器人已连接' : '等待机器人连接', isConnected ? 'bg-emerald-400' : 'bg-slate-500'],
+                ].map(([time, text, dot]) => (
+                  <div key={time + '-' + text} className="flex items-center gap-3 border-b border-cyan-300/12 pb-2 last:border-b-0">
+                    <span className={'h-2.5 w-2.5 rounded-full ' + dot} />
+                    <span className="text-slate-400">{time}</span>
+                    <span>{text}</span>
+                  </div>
+                ))}
+              </div>
+            </TechPanel>
           </aside>
 
           <main className="flex min-h-0 flex-col gap-3">
-            <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-cyan-400/55 bg-slate-950/75 p-2 shadow-[0_0_34px_rgba(14,165,233,0.26)]">
+            <div className="map-frame relative min-h-0 flex-1 overflow-hidden rounded-xl border border-cyan-300/58 bg-cyan-950/30 p-2 shadow-[0_0_28px_rgba(14,165,233,0.18)]">
               <div className="pointer-events-none absolute inset-2 rounded-lg border border-cyan-400/20" />
-              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(14,165,233,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(14,165,233,0.08)_1px,transparent_1px)] bg-[size:18px_18px]" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(14,165,233,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(14,165,233,0.055)_1px,transparent_1px)] bg-[size:18px_18px]" />
               {showDebug && <DebugPanel />}
               <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} />
               <div className="absolute left-5 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2"><MapToolButton icon={ZoomIn} /><MapToolButton icon={ZoomOut} /><MapToolButton icon={Maximize2} /><MapToolButton icon={LocateFixed} /><MapToolButton icon={Route} active={navClickMode !== 'none'} /></div>
-              <div className="absolute bottom-5 left-5 z-20 rounded-lg border border-cyan-400/35 bg-slate-950/75 px-4 py-3 text-xs text-slate-200 backdrop-blur"><div className="flex items-center gap-2"><Info className="h-4 w-4 text-cyan-300" /><span>{guidanceText}</span></div></div>
+              <div className="absolute bottom-5 left-5 z-20 rounded-lg border border-cyan-300/38 bg-slate-950/52 px-4 py-3 text-xs text-slate-200 backdrop-blur-[3px]"><div className="flex items-center gap-2"><Info className="h-4 w-4 text-cyan-300" /><span>{guidanceText}</span></div></div>
             </div>
 
             <div className="grid h-56 grid-cols-3 gap-3">
@@ -935,8 +954,31 @@ function AppContent() {
               <MediaViewport videoRef={media.videoRef} audioRef={media.audioRef} videoConnected={media.videoConnected} audioMonitoring={media.audioConnected} talkbackActive={media.talkbackActive} loadingAction={media.loadingAction} error={media.error} faceSnapshot={face.snapshot} onRefresh={() => void media.refreshStatus()} onToggleVideo={() => { if (media.videoConnected) { void media.stopVideo(); return; } void media.startVideo(); }} onToggleAudio={() => { if (media.audioConnected) { media.stopAudioMonitor(); return; } void media.startAudioMonitor(); }} onToggleTalkback={() => { if (media.talkbackActive) { void media.stopTalkback(); return; } void media.startTalkback(); }} />
             </TechPanel>
             <TechPanel title="图例说明"><div className="grid grid-cols-[1fr_150px] gap-3"><LayerControl /><img src={robotWireImage} alt="" className="h-32 w-full object-contain opacity-80" /></div></TechPanel>
-            <TechPanel title="机器人状态"><div className="grid grid-cols-[150px_1fr] gap-3"><img src={robotImage} alt="" className="h-36 w-full object-contain" /><div className="space-y-2"><MetricBar label="电量" value="82%" color="bg-emerald-400" /><MetricBar label="CPU" value={isConnected ? '35%' : '0%'} color="bg-sky-400" /><MetricBar label="内存" value="58%" color="bg-violet-400" /><MetricBar label="温度" value="48%" color="bg-amber-400" /><div className="flex justify-between text-xs text-slate-200"><span>当前模式</span><span>{mode === 'teleop' ? '遥操作' : '导航模式'}</span></div></div></div></TechPanel>
-            <TechPanel title="最近活动" className="flex-1"><div className="space-y-3 text-sm text-slate-300">{[['16:32:11', '设置初始位姿', 'bg-violet-400'], ['16:32:21', '接收到目标点', 'bg-yellow-400'], ['16:32:21', '路径规划中...', 'bg-yellow-400'], ['16:32:22', isConnected ? '机器人已连接' : '等待机器人连接', isConnected ? 'bg-emerald-400' : 'bg-slate-500']].map(([time, text, dot]) => (<div key={time + '-' + text} className="flex items-center gap-3 border-b border-cyan-400/10 pb-2 last:border-b-0"><span className={'h-2.5 w-2.5 rounded-full ' + dot} /><span className="text-slate-400">{time}</span><span>{text}</span></div>))}</div></TechPanel>
+            <TechPanel title="机器人状态" className="flex-1">
+              <div className="grid grid-cols-[150px_1fr] gap-3">
+                <img src={robotImage} alt="" className="h-36 w-full object-contain" />
+                <div className="space-y-2">
+                  <MetricBar label="电量" value="82%" color="bg-emerald-400" />
+                  <MetricBar label="CPU" value={isConnected ? '35%' : '0%'} color="bg-sky-400" />
+                  <MetricBar label="内存" value="58%" color="bg-violet-400" />
+                  <MetricBar label="温度" value="48%" color="bg-amber-400" />
+                  <div className="grid grid-cols-2 gap-2 border-t border-cyan-300/15 pt-2 text-xs text-slate-200">
+                    <div>
+                      <div className="text-slate-500">机器人 ID</div>
+                      <div className="font-semibold text-white">RB-042</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">运行时长</div>
+                      <div className="font-semibold text-white">02:14:36</div>
+                    </div>
+                  </div>
+                  <div className="flex justify-between text-xs text-slate-200">
+                    <span>当前模式</span>
+                    <span>{mode === 'teleop' ? '遥操作' : '导航模式'}</span>
+                  </div>
+                </div>
+              </div>
+            </TechPanel>
           </aside>
         </div>
       </div>
