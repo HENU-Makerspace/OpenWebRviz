@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-import base64
 import os
 import signal
 import shlex
 import subprocess
 import time
+from datetime import datetime, timezone
 
 import rclpy
 import requests
@@ -458,28 +458,18 @@ class SystemManager(Node):
                 pgm_path = f'{map_path}.pgm'
 
                 if os.path.exists(yaml_path) and os.path.exists(pgm_path):
-                    # Upload to server
                     try:
                         upload_base_url = self.resolve_map_upload_url()
-                        with open(yaml_path, 'r') as f:
-                            yaml_content = f.read()
-                        with open(pgm_path, 'rb') as f:
-                            pgm_content = base64.b64encode(f.read()).decode('utf-8')
-
-                        upload_data = {
-                            'name': map_name,
-                            'yaml': yaml_content,
-                            'pgm': pgm_content
-                        }
-                        upload_url = f'{upload_base_url}/api/maps/upload'
-                        self.get_logger().info(f'Uploading map to {upload_url}...')
-                        upload_resp = requests.post(upload_url, json=upload_data, timeout=30)
+                        map_list = self.build_map_list_payload()
+                        upload_url = f'{upload_base_url}/api/maps/list'
+                        self.get_logger().info(f'Uploading map list to {upload_url}...')
+                        upload_resp = requests.post(upload_url, json={'maps': map_list}, timeout=30)
                         if upload_resp.status_code == 200:
-                            self.get_logger().info('Map uploaded successfully')
+                            self.get_logger().info('Map list uploaded successfully')
                         else:
-                            self.get_logger().warn(f'Upload failed: {upload_resp.status_code} {upload_resp.text}')
+                            self.get_logger().warn(f'Map list upload failed: {upload_resp.status_code} {upload_resp.text}')
                     except Exception as upload_err:
-                        self.get_logger().warn(f'Failed to upload map: {upload_err}')
+                        self.get_logger().warn(f'Failed to upload map list: {upload_err}')
 
                     response.success = True
                     response.message = f'Map saved: {yaml_path}'
@@ -497,6 +487,29 @@ class SystemManager(Node):
             response.message = f'Failed: {e}'
 
         return response
+
+    def build_map_list_payload(self):
+        maps = []
+        try:
+            for entry in sorted(os.listdir(self.maps_dir)):
+                if not entry.endswith('.yaml'):
+                    continue
+                map_name = entry[:-5]
+                yaml_path = os.path.join(self.maps_dir, entry)
+                pgm_path = os.path.join(self.maps_dir, f'{map_name}.pgm')
+                if not os.path.exists(pgm_path):
+                    continue
+
+                stats = os.stat(yaml_path)
+                maps.append({
+                    'name': map_name,
+                    'filename': entry,
+                    'path': yaml_path,
+                    'created': datetime.fromtimestamp(stats.st_mtime, tz=timezone.utc).isoformat(),
+                })
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to build map list payload: {exc}')
+        return maps
 
     def resolve_map_upload_url(self):
         discovered_url = discover_server_url()

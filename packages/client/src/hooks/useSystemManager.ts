@@ -151,7 +151,7 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
       console.log('[useSystemManager] save_map response:', response);
       setStatus(prev => ({ ...prev, loading: false }));
       if (response.success) {
-        // 地图会由 Jetson 直接上传到服务器，这里只需要返回地图名称
+        // 地图保存在 Jetson，本接口只返回保存结果；云端会同步地图列表
         const mapPath = response.message;
         const mapName = mapPath.split('/').pop() || mapPath;
         console.log('[useSystemManager] Map saved, name:', mapName);

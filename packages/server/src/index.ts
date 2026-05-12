@@ -11,6 +11,7 @@ const execAsync = promisify(exec);
 const app = new Hono();
 
 const MAPS_DIR = path.join(process.cwd(), 'maps');
+const MAP_LIST_PATH = path.join(process.cwd(), 'maps-list.json');
 
 for (const key of ['http_proxy', 'https_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'all_proxy']) {
   delete process.env[key];
@@ -962,18 +963,18 @@ app.post('/api/media/talkback/forward/stop', async (c) => {
 // Get list of saved maps
 app.get('/api/maps', async (c) => {
   try {
-    const files = fs.readdirSync(MAPS_DIR);
-    const maps = files
-      .filter(f => f.endsWith('.yaml'))
-      .map(f => {
-        const stats = fs.statSync(path.join(MAPS_DIR, f));
-        return {
-          name: f.replace('.yaml', ''),
-          filename: f,
-          path: path.join(MAPS_DIR, f),
-          created: stats.birthtime.toISOString(),
-        };
-      });
+    let maps: Array<{ name: string; filename: string; path: string; created: string }> = [];
+
+    if (fs.existsSync(MAP_LIST_PATH)) {
+      const raw = fs.readFileSync(MAP_LIST_PATH, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed?.maps)) {
+        maps = parsed.maps;
+      } else if (Array.isArray(parsed)) {
+        maps = parsed;
+      }
+    }
+
     return c.json({ maps });
   } catch (error) {
     return c.json({ error: 'Failed to list maps', details: String(error) }, 500);
@@ -1067,33 +1068,27 @@ app.get('/api/maps/:name/data', async (c) => {
   }
 });
 
-// Upload map from Jetson via HTTP (JSON with base64)
-app.post('/api/maps/upload', async (c) => {
+// Upload map list from Jetson via HTTP (JSON)
+app.post('/api/maps/list', async (c) => {
   try {
     const body = await c.req.json();
-    const { name, yaml, pgm } = body;
+    const { maps } = body;
 
-    if (!name || !yaml || !pgm) {
-      return c.json({ error: 'Missing required fields' }, 400);
+    if (!Array.isArray(maps)) {
+      return c.json({ error: 'Missing required maps array' }, 400);
     }
 
-    const localYamlPath = path.join(MAPS_DIR, `${name}.yaml`);
-    const localPgmPath = path.join(MAPS_DIR, `${name}.pgm`);
-
-    // Save files
-    fs.writeFileSync(localYamlPath, yaml, 'utf-8');
-    const pgmBuffer = Buffer.from(pgm, 'base64');
-    fs.writeFileSync(localPgmPath, pgmBuffer);
-
-    console.log('[upload] Map saved:', name);
+    fs.writeFileSync(MAP_LIST_PATH, JSON.stringify({ maps }, null, 2), 'utf-8');
+    console.log('[maps/list] Map list updated:', maps.length);
 
     return c.json({
       success: true,
-      map: { name, yamlPath: localYamlPath, pgmPath: localPgmPath }
+      count: maps.length,
+      path: MAP_LIST_PATH,
     });
   } catch (error) {
-    console.error('[upload] Error:', error);
-    return c.json({ error: 'Failed to upload map', details: String(error) }, 500);
+    console.error('[maps/list] Error:', error);
+    return c.json({ error: 'Failed to upload map list', details: String(error) }, 500);
   }
 });
 
