@@ -14,8 +14,8 @@ class ScanThrottle(Node):
     def __init__(self):
         super().__init__('scan_throttle')
 
-        self.declare_parameter('input_topic', '/scan_raw')
-        self.declare_parameter('output_topic', '/scan')
+        self.declare_parameter('input_topic', '/scan')
+        self.declare_parameter('output_topic', '/scan_web')
         self.declare_parameter('output_rate_hz', 1.0)
         self.declare_parameter('queue_size', 5)
 

@@ -91,7 +91,7 @@ export function MapCanvas({
   const { globalPath } = useRosPath(ros, '/plan', pathPaused, pathResetToken);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
   const { publishInitialPose } = useInitialPosePublisher(ros, '/initialpose');
-  const { scanData } = useRosScan(ros, '/scan', scanPaused);
+  const { scanData } = useRosScan(ros, '/scan_web', scanPaused);
 
   const actualPose = tfPose || robotPose;
   const [frozenNavMap, setFrozenNavMap] = useState<MapData | null>(null);

@@ -123,7 +123,7 @@ def generate_launch_description():
             package='pointcloud_to_laserscan',
             executable='pointcloud_to_laserscan_node',
             name='pointcloud_to_laserscan',
-            remappings=[('cloud_in', '/cloud_registered_body'), ('scan', '/scan_raw')],
+            remappings=[('cloud_in', '/cloud_registered_body'), ('scan', '/scan')],
             parameters=[{
                 'target_frame': pointcloud_target_frame,
                 'transform_tolerance': 0.5,
@@ -145,8 +145,8 @@ def generate_launch_description():
             name='scan_throttle',
             output='screen',
             parameters=[{
-                'input_topic': '/scan_raw',
-                'output_topic': '/scan',
+                'input_topic': '/scan',
+                'output_topic': '/scan_web',
                 'output_rate_hz': 1.0,
                 'queue_size': 5,
                 'use_sim_time': use_sim_time,
