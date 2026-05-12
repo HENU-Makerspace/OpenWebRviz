@@ -37,7 +37,7 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
   // Subscribe to map
   useEffect(() => {
     // If no topic specified (navigation mode with static map), don't subscribe
-    if (!ros || !mapTopic) {
+    if (!ros || !mapTopic || paused) {
       setMapData(null);
       setIsMapLoaded(false);
       return;
@@ -58,7 +58,6 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
     };
 
     mapSub.subscribe((message: unknown) => {
-      if (paused) return;
       const gridMsg = message as MapData;
       latestMapRef.current = gridMsg;
       if (rafRef.current == null) {

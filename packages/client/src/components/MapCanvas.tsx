@@ -76,10 +76,15 @@ export function MapCanvas({
   const { mode } = useMode();
   const isPaused = subscriptionSettings.paused;
 
-  const mapPaused = isPaused || !layers.map;
-  const tfPaused = isPaused || !layers.tf;
-  const pathPaused = isPaused || !layers.globalPlan;
-  const scanPaused = isPaused || !layers.scan;
+  const needsMap = layers.map || mode === 'navigation';
+  const needsTf = layers.tf || layers.scan;
+  const needsPath = layers.globalPlan && mode === 'navigation';
+  const needsScan = layers.scan;
+
+  const mapPaused = isPaused || !needsMap;
+  const tfPaused = isPaused || !needsTf;
+  const pathPaused = isPaused || !needsPath;
+  const scanPaused = isPaused || !needsScan;
 
   const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused);
   const { robotPose: tfPose, resolvePoseInMap, tfVersion } = useRosTfTree(ros, tfPaused);

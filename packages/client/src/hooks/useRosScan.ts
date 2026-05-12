@@ -25,7 +25,7 @@ export function useRosScan(
   const latestScanRef = useRef<LaserScanData | null>(null);
 
   useEffect(() => {
-    if (!ros) {
+    if (!ros || paused) {
       setScanData(null);
       return;
     }
@@ -34,6 +34,7 @@ export function useRosScan(
       ros,
       name: topicName,
       messageType: 'sensor_msgs/msg/LaserScan',
+      compression: 'png',
     });
 
     const flushLatest = () => {
@@ -44,8 +45,6 @@ export function useRosScan(
     };
 
     scanSub.subscribe((message: unknown) => {
-      if (paused) return;
-
       const msg = message as {
         header: { frame_id: string };
         angle_min: number;

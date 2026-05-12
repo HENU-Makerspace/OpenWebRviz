@@ -22,7 +22,7 @@ export function useRosPath(
   const latestGlobalRef = useRef<NavPath | null>(null);
 
   useEffect(() => {
-    if (!ros) {
+    if (!ros || paused) {
       setGlobalPath(null);
       return;
     }
@@ -47,8 +47,6 @@ export function useRosPath(
     };
 
     globalSub.subscribe((message: unknown) => {
-      if (paused) return;
-
       const pathMsg = message as {
         header: { stamp: { sec: number; nsec: number } };
         poses: Array<{
