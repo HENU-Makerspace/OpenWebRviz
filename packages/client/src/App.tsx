@@ -917,13 +917,8 @@ function AppContent() {
           </aside>
 
           <main className="flex min-h-0 flex-col gap-3">
-            <div className="map-frame relative min-h-0 overflow-hidden p-6" style={{ backgroundImage: 'url(' + borderImage + ')' }}>
+            <div className="map-frame relative min-h-0 overflow-hidden" style={{ backgroundImage: 'url(' + borderImage + ')' }}>
               {showDebug && <DebugPanel />}
-              <div className="absolute right-8 top-8 z-30 flex overflow-hidden rounded-md border border-cyan-300/30 bg-slate-950/58 text-xs backdrop-blur-[3px]">
-                <button type="button" onClick={() => setMainViewport('map')} className={['px-3 py-1.5 transition', mainViewport === 'map' ? 'bg-cyan-500/24 text-cyan-100' : 'text-slate-300 hover:bg-cyan-500/12'].join(' ')}>地图</button>
-                <button type="button" onClick={() => setMainViewport('camera')} className={['border-l border-cyan-300/20 px-3 py-1.5 transition', mainViewport === 'camera' ? 'bg-cyan-500/24 text-cyan-100' : 'text-slate-300 hover:bg-cyan-500/12'].join(' ')}>摄像实况</button>
-              </div>
-
               {mainViewport === 'map' ? (
                 <div className="relative z-10 h-full overflow-hidden rounded-lg bg-slate-950/26">
                   <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} />
@@ -938,7 +933,7 @@ function AppContent() {
             </div>
 
             <div className="grid h-56 grid-cols-3 gap-3">
-              <TechPanel title="移动控制"><div className="flex items-center justify-center"><div className="motion-pad"><button className="motion-pad-button motion-pad-up"><span>前进</span><b>▲</b></button><button className="motion-pad-button motion-pad-left"><b>◀</b><span>左转</span></button><button className="motion-pad-center"><span>□</span></button><button className="motion-pad-button motion-pad-right"><span>右转</span><b>▶</b></button><button className="motion-pad-button motion-pad-down"><b>▼</b><span>后退</span></button></div></div></TechPanel>
+              <TechPanel title="移动控制"><div className="motion-control"><div className="motion-pad"><button className="motion-pad-button motion-pad-up"><span>前进</span><b>▲</b></button><button className="motion-pad-button motion-pad-left"><b>◀</b><span>左转</span></button><button className="motion-pad-center"><span>▣</span></button><button className="motion-pad-button motion-pad-right"><b>▶</b><span>右转</span></button><button className="motion-pad-button motion-pad-down"><b>▼</b><span>后退</span></button></div></div></TechPanel>
               <TechPanel title="姿态控制"><div className="grid grid-cols-3 gap-3">{['X+', 'Y+', 'Yaw+', 'X-', 'Y-', 'Yaw-'].map((label) => (<button key={label} className="h-14 rounded-md border border-cyan-400/25 bg-slate-950/70 text-sm font-semibold text-yellow-300 hover:bg-cyan-500/10">{label}</button>))}</div></TechPanel>
               <TechPanel title="语音广播"><div className="space-y-3"><div className="rounded-md border border-cyan-400/20 bg-slate-950/65 px-3 py-2 text-sm text-slate-500">在此输入广播内容...</div><div className="broadcast-waveform flex h-10 items-center gap-1">{Array.from({ length: 44 }).map((_, index) => (<span key={index} className="rounded-full bg-cyan-400" style={{ height: 6 + ((index * 11 + index * index) % 30) + 'px', opacity: 0.55 + ((index % 5) * 0.09) }} />))}</div><div className="grid grid-cols-2 gap-3"><button className="inline-flex items-center justify-center gap-2 rounded-md border border-cyan-400/45 bg-cyan-500/20 px-3 py-2 text-sm text-cyan-100"><Mic className="h-4 w-4" />开始广播</button><button className="inline-flex items-center justify-center gap-2 rounded-md border border-red-400/50 bg-red-500/20 px-3 py-2 text-sm text-red-100"><Square className="h-4 w-4" />停止广播</button></div></div></TechPanel>
             </div>
@@ -947,7 +942,12 @@ function AppContent() {
           <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pl-1">
             <TechPanel
               title={mainViewport === 'map' ? '摄像机视角' : '地图概况'}
-              action={<span className="rounded bg-blue-500/80 px-2 py-0.5 text-xs text-white">{mainViewport === 'map' ? 'LIVE' : 'MAP'}</span>}
+              action={(
+                <div className="view-switch-control">
+                  <button type="button" onClick={() => setMainViewport('map')} className={mainViewport === 'map' ? 'is-active' : ''}>地图</button>
+                  <button type="button" onClick={() => setMainViewport('camera')} className={mainViewport === 'camera' ? 'is-active' : ''}>摄像实况</button>
+                </div>
+              )}
               className="media-panel"
             >
               {mainViewport === 'map' ? (
@@ -955,7 +955,6 @@ function AppContent() {
               ) : (
                 <div className="map-overview relative aspect-video overflow-hidden rounded-xl border border-cyan-400/20 bg-slate-950/50">
                   <MapCanvas ros={ros} isConnected={isConnected} navClickMode="none" selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} />
-                  <button type="button" onClick={() => setMainViewport('map')} className="absolute bottom-3 right-3 z-20 rounded-md border border-cyan-400/35 bg-slate-950/70 px-3 py-1.5 text-xs text-cyan-100 backdrop-blur-[3px] hover:bg-cyan-500/24">查看地图</button>
                 </div>
               )}
             </TechPanel>

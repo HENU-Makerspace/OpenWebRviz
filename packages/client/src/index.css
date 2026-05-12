@@ -175,6 +175,7 @@ body {
     max-width: 100%;
     flex: none;
     align-self: center;
+    padding: 3.5rem 3.2rem;
     background-position: center;
     background-repeat: no-repeat;
     background-size: 100% 100%;
@@ -186,15 +187,104 @@ body {
     display: none;
   }
 
+  .map-overview {
+    aspect-ratio: 16 / 9;
+  }
+
+  .view-switch-control {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid rgb(103 232 249 / 0.28);
+    border-radius: 0.375rem;
+    background: rgb(2 6 23 / 0.42);
+    font-size: 0.6875rem;
+    line-height: 1rem;
+  }
+
+  .view-switch-control button {
+    padding: 0.25rem 0.5rem;
+    color: rgb(203 213 225);
+    transition:
+      background 160ms ease,
+      color 160ms ease;
+  }
+
+  .view-switch-control button + button {
+    border-left: 1px solid rgb(103 232 249 / 0.18);
+  }
+
+  .view-switch-control button:hover,
+  .view-switch-control button.is-active {
+    background: rgb(14 165 233 / 0.24);
+    color: rgb(224 242 254);
+  }
+
+  .main-camera-view > .w-full {
+    position: relative;
+    height: 100%;
+  }
+
+  .main-camera-view > .w-full > .relative {
+    height: 100%;
+    background: rgb(15 23 42 / 0.76);
+    box-shadow: none;
+  }
+
   .main-camera-view video {
-    max-height: calc(100vh - 340px);
-    min-height: 360px;
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+    object-fit: contain;
+  }
+
+  .main-camera-view video.bg-black,
+  .main-camera-view .bg-black {
+    background-color: rgb(15 23 42 / 0.76);
+  }
+
+  .main-camera-view .bg-gradient-to-br {
+    background-image: none;
+    background-color: rgb(15 23 42 / 0.76);
+  }
+
+  .main-camera-view .grid.grid-cols-4 {
+    position: absolute;
+    left: 1.25rem;
+    top: 50%;
+    z-index: 20;
+    display: flex;
+    width: auto;
+    transform: translateY(-50%);
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .main-camera-view .grid.grid-cols-4 button {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-color: rgb(103 232 249 / 0.38);
+    background: rgb(2 6 23 / 0.58);
+    color: rgb(224 242 254);
+    box-shadow: 0 0 12px rgb(14 165 233 / 0.10);
+    backdrop-filter: blur(3px);
+  }
+
+  .main-camera-view .grid.grid-cols-4 button:hover {
+    background: rgb(14 165 233 / 0.18);
+  }
+
+  .motion-control {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
   }
 
   .motion-pad {
     position: relative;
     width: 146px;
     height: 146px;
+    margin: 0 auto;
     border-radius: 9999px;
     border: 1px solid rgb(56 189 248 / 0.22);
     background:
@@ -247,21 +337,25 @@ body {
 
   .motion-pad-up {
     left: 49px;
-    top: 13px;
+    top: 5px;
   }
 
   .motion-pad-left {
-    left: 13px;
+    left: 0px;
     top: 54px;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .motion-pad-right {
-    right: 13px;
+    right: 0px;
     top: 54px;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .motion-pad-down {
-    bottom: 13px;
+    bottom: 5px;
     left: 49px;
   }
 
