@@ -245,14 +245,12 @@ function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) 
   const handleSaveMap = async () => {
     setSaving(true);
     console.log('[SaveMap] Starting save on robot...');
-    // Save on robot (Jetson will upload to server automatically)
     const result = await saveMap();
     console.log('[SaveMap] Robot save result:', result);
-    // Wait for upload and refresh maps
-    console.log('[SaveMap] Waiting for upload...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    console.log('[SaveMap] Refreshing maps from server...');
-    await fetchMaps();
+    if (result) {
+      console.log('[SaveMap] Refreshing maps from server...');
+      await fetchMaps();
+    }
     console.log('[SaveMap] Done, maps:', maps);
     setSaving(false);
   };

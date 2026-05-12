@@ -30,7 +30,7 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
   });
 
   // 调用 ROS 服务的辅助函数 (for Trigger services)
-  const callService = useCallback(<T = any>(serviceName: string): Promise<T> => {
+  const callService = useCallback(<T = any>(serviceName: string, timeoutSec: number = 10): Promise<T> => {
     return new Promise((resolve, reject) => {
       if (!ros || !isConnected) {
         reject(new Error('Not connected to ROS'));
@@ -47,7 +47,7 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
         resolve(response);
       }, (error: string) => {
         reject(new Error(error));
-      }, 10);
+      }, timeoutSec);
     });
   }, [ros, isConnected]);
 
@@ -147,7 +147,7 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
     console.log('[useSystemManager] Calling /system/save_map...');
     setStatus(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const response = await callService<{ success: boolean; message: string }>('/system/save_map');
+      const response = await callService<{ success: boolean; message: string }>('/system/save_map', 40);
       console.log('[useSystemManager] save_map response:', response);
       setStatus(prev => ({ ...prev, loading: false }));
       if (response.success) {
