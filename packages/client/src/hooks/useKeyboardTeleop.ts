@@ -27,6 +27,7 @@ export function useKeyboardTeleop(
   const motionCmdPubRef = useRef<any>(null);
   const standCmdPubRef = useRef<any>(null);
   const pressedKeysRef = useRef<Set<string>>(new Set());
+  const manualCommandRef = useRef<{ linear: number; angular: number } | null>(null);
   const publishTimerRef = useRef<number | null>(null);
   const standModeRef = useRef(settings.standMode);
   const stanceTimerIdsRef = useRef<number[]>([]);
@@ -76,6 +77,8 @@ export function useKeyboardTeleop(
   }, [sendCommand]);
 
   const sendStanceCommand = useCallback((nextStandMode: boolean) => {
+    if (!enabled) return;
+
     stanceTimerIdsRef.current.forEach((timerId) => window.clearTimeout(timerId));
     stanceTimerIdsRef.current = [];
 
@@ -107,7 +110,7 @@ export function useKeyboardTeleop(
     stanceTimerIdsRef.current.push(window.setTimeout(() => {
       stanceTimerIdsRef.current = [];
     }, 800));
-  }, [sendCommand]);
+  }, [enabled, sendCommand]);
 
   // Initialize publisher
   useEffect(() => {
@@ -147,6 +150,12 @@ export function useKeyboardTeleop(
   // Publish Diablo motion command directly in the same direction mapping the Jetson bridge used.
   const publishCmdVel = useCallback(() => {
     if (!motionCmdPubRef.current || !enabled) return;
+
+    const manualCommand = manualCommandRef.current;
+    if (manualCommand) {
+      sendCommand(manualCommand.linear, manualCommand.angular);
+      return;
+    }
 
     const pressed = pressedKeysRef.current;
     let linear = 0;
@@ -188,6 +197,26 @@ export function useKeyboardTeleop(
       publishTimerRef.current = null;
     }
   }, []);
+
+  const startManualCommand = useCallback((linear: number, angular: number) => {
+    if (!enabled) return;
+
+    manualCommandRef.current = { linear, angular };
+    sendCommand(linear, angular);
+    startPublishing();
+  }, [enabled, sendCommand, startPublishing]);
+
+  const stopManualCommand = useCallback(() => {
+    manualCommandRef.current = null;
+
+    if (pressedKeysRef.current.size > 0) {
+      publishCmdVel();
+      return;
+    }
+
+    stopPublishing();
+    sendStop();
+  }, [publishCmdVel, sendStop, stopPublishing]);
 
   // Set up keyboard event listeners
   useEffect(() => {
@@ -259,6 +288,7 @@ export function useKeyboardTeleop(
       stanceTimerIdsRef.current.forEach((timerId) => window.clearTimeout(timerId));
       stanceTimerIdsRef.current = [];
       pressedKeysRef.current.clear();
+      manualCommandRef.current = null;
       stopPublishing();
       sendStop();
     };
@@ -266,6 +296,12 @@ export function useKeyboardTeleop(
 
   return {
     isActive: enabled,
+    standMode,
+    sendStop,
+    startManualCommand,
+    stopManualCommand,
+    setStandMode: sendStanceCommand,
+    toggleStandMode: () => sendStanceCommand(!standModeRef.current),
     settings: {
       ...settings,
       standMode,

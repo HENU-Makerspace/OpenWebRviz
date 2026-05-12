@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type PointerEvent } from 'react';
 import {
   Activity,
   ChevronDown,
@@ -749,7 +749,7 @@ function AppContent() {
   const [patrolPoints, setPatrolPoints] = useState<NavigationPose[]>([]);
   const navigationTasks = useNavigationTasks(ros, isConnected, config?.navigation || null);
 
-  useKeyboardTeleop(ros, {
+  const teleop = useKeyboardTeleop(ros, {
     linearSpeed: 0.5,
     angularSpeed: 1.0,
     motionCmdTopic: config?.topics?.motionCmdTopic || '/diablo/MotionCmd',
@@ -758,6 +758,32 @@ function AppContent() {
     up: config?.teleop?.up ?? 0.0,
     publishRateHz: config?.teleop?.publishRateHz ?? 25,
   }, isConnected && mode === 'teleop');
+
+  const teleopControlsEnabled = isConnected && mode === 'teleop';
+  const motionButtonClass = `motion-pad-button ${teleopControlsEnabled ? '' : 'opacity-45 cursor-not-allowed'}`;
+
+  const startMotionButton = (linear: number, angular: number) => {
+    if (!teleopControlsEnabled) return;
+    teleop.startManualCommand(linear, angular);
+  };
+
+  const stopMotionButton = () => {
+    teleop.stopManualCommand();
+  };
+
+  const handleMotionPointerDown = (event: PointerEvent<HTMLButtonElement>, linear: number, angular: number) => {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    startMotionButton(linear, angular);
+  };
+
+  const handleMotionPointerUp = (event: PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    stopMotionButton();
+  };
 
   useEffect(() => {
     if (previousSelectedMapRef.current === selectedMap) {
@@ -933,9 +959,133 @@ function AppContent() {
             </div>
 
             <div className="grid h-56 grid-cols-3 gap-3">
-              <TechPanel title="移动控制"><div className="motion-control"><div className="motion-pad"><button className="motion-pad-button motion-pad-up"><span>前进</span><b>▲</b></button><button className="motion-pad-button motion-pad-left"><b>◀</b><span>左转</span></button><button className="motion-pad-center"><span>▣</span></button><button className="motion-pad-button motion-pad-right"><b>▶</b><span>右转</span></button><button className="motion-pad-button motion-pad-down"><b>▼</b><span>后退</span></button></div></div></TechPanel>
-              <TechPanel title="姿态控制"><div className="grid grid-cols-3 gap-3">{['X+', 'Y+', 'Yaw+', 'X-', 'Y-', 'Yaw-'].map((label) => (<button key={label} className="h-14 rounded-md border border-cyan-400/25 bg-slate-950/70 text-sm font-semibold text-yellow-300 hover:bg-cyan-500/10">{label}</button>))}</div></TechPanel>
-              <TechPanel title="语音广播"><div className="space-y-3"><div className="rounded-md border border-cyan-400/20 bg-slate-950/65 px-3 py-2 text-sm text-slate-500">在此输入广播内容...</div><div className="broadcast-waveform flex h-10 items-center gap-1">{Array.from({ length: 44 }).map((_, index) => (<span key={index} className="rounded-full bg-cyan-400" style={{ height: 6 + ((index * 11 + index * index) % 30) + 'px', opacity: 0.55 + ((index % 5) * 0.09) }} />))}</div><div className="grid grid-cols-2 gap-3"><button className="inline-flex items-center justify-center gap-2 rounded-md border border-cyan-400/45 bg-cyan-500/20 px-3 py-2 text-sm text-cyan-100"><Mic className="h-4 w-4" />开始广播</button><button className="inline-flex items-center justify-center gap-2 rounded-md border border-red-400/50 bg-red-500/20 px-3 py-2 text-sm text-red-100"><Square className="h-4 w-4" />停止广播</button></div></div></TechPanel>
+              <TechPanel title="移动控制">
+                <div className="motion-control">
+                  <div className="motion-pad" onContextMenu={(event) => event.preventDefault()}>
+                    <button
+                      type="button"
+                      disabled={!teleopControlsEnabled}
+                      className={`${motionButtonClass} motion-pad-up`}
+                      onPointerDown={(event) => handleMotionPointerDown(event, teleop.settings.linearSpeed, 0)}
+                      onPointerUp={handleMotionPointerUp}
+                      onPointerCancel={handleMotionPointerUp}
+                      onLostPointerCapture={stopMotionButton}
+                    >
+                      <span>前进</span>
+                      <b>▲</b>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!teleopControlsEnabled}
+                      className={`${motionButtonClass} motion-pad-left`}
+                      onPointerDown={(event) => handleMotionPointerDown(event, 0, teleop.settings.angularSpeed)}
+                      onPointerUp={handleMotionPointerUp}
+                      onPointerCancel={handleMotionPointerUp}
+                      onLostPointerCapture={stopMotionButton}
+                    >
+                      <b>◀</b>
+                      <span>左转</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!teleopControlsEnabled}
+                      className="motion-pad-center"
+                      onClick={teleop.sendStop}
+                      title="停止"
+                    >
+                      <span>■</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!teleopControlsEnabled}
+                      className={`${motionButtonClass} motion-pad-right`}
+                      onPointerDown={(event) => handleMotionPointerDown(event, 0, -teleop.settings.angularSpeed)}
+                      onPointerUp={handleMotionPointerUp}
+                      onPointerCancel={handleMotionPointerUp}
+                      onLostPointerCapture={stopMotionButton}
+                    >
+                      <b>▶</b>
+                      <span>右转</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!teleopControlsEnabled}
+                      className={`${motionButtonClass} motion-pad-down`}
+                      onPointerDown={(event) => handleMotionPointerDown(event, -teleop.settings.linearSpeed, 0)}
+                      onPointerUp={handleMotionPointerUp}
+                      onPointerCancel={handleMotionPointerUp}
+                      onLostPointerCapture={stopMotionButton}
+                    >
+                      <b>▼</b>
+                      <span>后退</span>
+                    </button>
+                  </div>
+                </div>
+              </TechPanel>
+              <TechPanel title="姿态控制">
+                <div className="grid h-full grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled={!teleopControlsEnabled || !teleop.standMode}
+                    onClick={() => teleop.setStandMode(false)}
+                    className="rounded-md border border-cyan-400/25 bg-slate-950/70 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    趴下
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!teleopControlsEnabled || teleop.standMode}
+                    onClick={() => teleop.setStandMode(true)}
+                    className="rounded-md border border-cyan-400/25 bg-slate-950/70 text-sm font-semibold text-yellow-300 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    站立
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!teleopControlsEnabled}
+                    onClick={teleop.toggleStandMode}
+                    className="col-span-2 rounded-md border border-cyan-400/25 bg-cyan-500/15 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    当前：{teleop.standMode ? '站立' : '趴下'}，点击切换
+                  </button>
+                </div>
+              </TechPanel>
+              <TechPanel title="语音对讲">
+                <div className="space-y-3">
+                  <div className="rounded-md border border-cyan-400/20 bg-slate-950/65 px-3 py-2 text-sm text-slate-300">
+                    {media.talkbackActive ? '麦克风正在发送到机器人' : '麦克风未发送'}
+                  </div>
+                  <div className="broadcast-waveform flex h-10 items-center gap-1">
+                    {Array.from({ length: 44 }).map((_, index) => (
+                      <span
+                        key={index}
+                        className="rounded-full bg-cyan-400"
+                        style={{ height: 6 + ((index * 11 + index * index) % 30) + 'px', opacity: media.talkbackActive ? 0.55 + ((index % 5) * 0.09) : 0.22 }}
+                      />
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      disabled={media.talkbackActive || Boolean(media.loadingAction)}
+                      onClick={() => void media.startTalkback()}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-cyan-400/45 bg-cyan-500/20 px-3 py-2 text-sm text-cyan-100 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <Mic className="h-4 w-4" />
+                      开始对讲
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!media.talkbackActive || Boolean(media.loadingAction)}
+                      onClick={() => void media.stopTalkback()}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-red-400/50 bg-red-500/20 px-3 py-2 text-sm text-red-100 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      <Square className="h-4 w-4" />
+                      停止对讲
+                    </button>
+                  </div>
+                </div>
+              </TechPanel>
             </div>
           </main>
 
