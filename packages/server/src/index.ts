@@ -179,14 +179,23 @@ JANUS_HTML_DIR=${shellQuote(asString(media.janus_html_dir, '/opt/janus/share/jan
 JANUS_DEMO_PORT=${shellQuote(String(asNumber(media.janus_demo_port, 8000)))}
 AUDIO_CAPTURE_DEVICE=${shellQuote(asString(media.audio_capture_device, 'plughw:CARD=UACDemoV10,DEV=0'))}
 AUDIO_CAPTURE_PORT=${shellQuote(String(asNumber(media.audio_capture_port, 5005)))}
+AUDIO_STREAM_ID=${shellQuote(String(asNumber(media.preferred_audio_stream_id, 99)))}
+AUDIO_STREAM_PT=${shellQuote('111')}
+AUDIO_STREAM_RTPMAP=${shellQuote('opus/48000/2')}
 AUDIO_PLAYBACK_DEVICE=${shellQuote(asString(media.audio_playback_device, 'plughw:CARD=UACDemoV10,DEV=0'))}
 AUDIO_PLAYBACK_PORT=${shellQuote(String(asNumber(media.audio_playback_port, 5006)))}
+AUDIOBRIDGE_ROOM=${shellQuote(String(asNumber(media.audiobridge_room, 1234)))}
+AUDIOBRIDGE_SECRET=${shellQuote(asString(media.audiobridge_secret, 'adminpwd'))}
+AUDIOBRIDGE_SAMPLING_RATE=${shellQuote('48000')}
 VIDEO_DEVICE=${shellQuote(asString(media.video_device, '/dev/video0'))}
 VIDEO_PORT=${shellQuote(String(asNumber(media.video_port, 8004)))}
 VIDEO_WIDTH=${shellQuote(String(asNumber(media.video_width, 1280)))}
 VIDEO_HEIGHT=${shellQuote(String(asNumber(media.video_height, 720)))}
 VIDEO_FRAMERATE=${shellQuote(asString(media.video_framerate, '30/1'))}
 VIDEO_BITRATE=${shellQuote(String(asNumber(media.video_bitrate, 4000)))}
+VIDEO_STREAM_ID=${shellQuote(String(asNumber(media.preferred_video_stream_id, 101)))}
+VIDEO_STREAM_PT=${shellQuote('96')}
+VIDEO_STREAM_CODEC=${shellQuote('h264')}
 `;
 }
 

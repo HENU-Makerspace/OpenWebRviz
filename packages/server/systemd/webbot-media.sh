@@ -9,6 +9,9 @@ JANUS_RUNTIME_CONFIG_DIR="${HOME}/.config/webbot/janus"
 
 AUDIO_CAPTURE_DEVICE="plughw:CARD=UACDemoV10,DEV=0"
 AUDIO_CAPTURE_PORT="5005"
+AUDIO_STREAM_ID="99"
+AUDIO_STREAM_PT="111"
+AUDIO_STREAM_RTPMAP="opus/48000/2"
 
 AUDIO_PLAYBACK_DEVICE="plughw:CARD=UACDemoV10,DEV=0"
 AUDIO_PLAYBACK_PORT="5006"
@@ -23,6 +26,9 @@ VIDEO_FACE_FRAME_RATE="2/1"
 VIDEO_STREAM_ID="101"
 VIDEO_STREAM_PT="96"
 VIDEO_STREAM_CODEC="h264"
+AUDIOBRIDGE_ROOM="1234"
+AUDIOBRIDGE_SECRET="adminpwd"
+AUDIOBRIDGE_SAMPLING_RATE="48000"
 MEDIA_ENV_FILE="${HOME}/.config/webbot/media.env"
 
 if [[ -f "${MEDIA_ENV_FILE}" ]]; then
@@ -48,6 +54,7 @@ prepare_janus_runtime_config() {
   local main_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.jcfg"
   local http_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.transport.http.jcfg"
   local streaming_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.plugin.streaming.jcfg"
+  local audiobridge_cfg="${JANUS_RUNTIME_CONFIG_DIR}/janus.plugin.audiobridge.jcfg"
 
   if [[ -f "${JANUS_CONFIG_DIR}/janus.jcfg" ]]; then
     cp "${JANUS_CONFIG_DIR}/janus.jcfg" "${main_cfg}"
@@ -70,6 +77,18 @@ prepare_janus_runtime_config() {
 general: {
 }
 
+webbot-audio: {
+	type = "rtp"
+	id = ${AUDIO_STREAM_ID}
+	description = "WebBot Opus monitor stream"
+	audio = true
+	audioport = ${AUDIO_CAPTURE_PORT}
+	audiopt = ${AUDIO_STREAM_PT}
+	audiortpmap = "${AUDIO_STREAM_RTPMAP}"
+	video = false
+	is_private = false
+}
+
 webbot-video: {
 	type = "rtp"
 	id = ${VIDEO_STREAM_ID}
@@ -80,6 +99,18 @@ webbot-video: {
 	videopt = ${VIDEO_STREAM_PT}
 	videocodec = "${VIDEO_STREAM_CODEC}"
 	is_private = false
+}
+EOF
+
+  cat > "${audiobridge_cfg}" <<EOF
+general: {
+}
+
+room-${AUDIOBRIDGE_ROOM}: {
+	description = "WebBot Talkback Room"
+	secret = "${AUDIOBRIDGE_SECRET}"
+	sampling_rate = ${AUDIOBRIDGE_SAMPLING_RATE}
+	record = false
 }
 EOF
 }
