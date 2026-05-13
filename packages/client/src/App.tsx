@@ -13,7 +13,6 @@ import {
   Radio,
   Route,
   Settings,
-  ShieldCheck,
   Square,
   ZoomIn,
   ZoomOut,
@@ -98,24 +97,26 @@ function TechPanel({
   title,
   children,
   className = '',
+  bodyClassName = 'p-4',
   action,
 }: {
   title?: string;
   children: React.ReactNode;
   className?: string;
+  bodyClassName?: string;
   action?: React.ReactNode;
 }) {
   return (
-    <section className={`tech-panel-frame relative overflow-hidden rounded-lg border border-cyan-300/55 bg-cyan-950/38 shadow-[0_0_22px_rgba(14,165,233,0.16)] backdrop-blur-[3px] ${className}`}>
+    <section className={`tech-panel-frame relative min-w-0 overflow-hidden rounded-lg border border-cyan-300/55 bg-cyan-950/38 shadow-[0_0_22px_rgba(14,165,233,0.16)] backdrop-blur-[3px] ${className}`}>
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,rgba(6,182,212,0.14),rgba(8,47,73,0.18)_42%,rgba(59,130,246,0.10))]" />
       <div className="pointer-events-none absolute left-0 top-4 h-6 w-0.5 bg-cyan-300" />
       {(title || action) && (
-        <div className="relative flex items-center justify-between border-b border-cyan-400/15 px-4 py-3">
+        <div className="relative z-10 flex items-center justify-between border-b border-cyan-400/15 px-4 py-3">
           {title && <h2 className="text-sm font-semibold text-slate-100">{title}</h2>}
           {action}
         </div>
       )}
-      <div className="relative p-4">{children}</div>
+      <div className={`relative z-10 min-w-0 ${bodyClassName}`}>{children}</div>
     </section>
   );
 }
@@ -191,11 +192,24 @@ function RosbridgePanel({
   rosbridgeUrl?: string;
 }) {
   return (
-    <div className="space-y-2">
-      <h3 className="text-sm font-medium text-gray-500">Rosbridge</h3>
-      <div className="space-y-1 rounded bg-gray-50 px-2 py-1.5 text-xs text-gray-500">
-        <div>连接模式：{profile || 'unknown'}</div>
-        <div className="truncate font-mono" title={rosbridgeUrl || ''}>
+    <div className="space-y-3 text-sm text-slate-200">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <h3 className="shrink-0 text-sm font-medium text-gray-500">Rosbridge</h3>
+        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] ${
+          isConnected
+            ? 'border-emerald-300/30 bg-emerald-500/12 text-emerald-300'
+            : 'border-slate-400/25 bg-slate-500/10 text-slate-300'
+        }`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+          {isConnected ? '已连接' : '未连接'}
+        </span>
+      </div>
+      <div className="space-y-1.5 rounded-md border border-cyan-300/18 bg-cyan-950/24 px-3 py-2 text-xs text-slate-300">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-slate-400">连接模式</span>
+          <span className="truncate text-slate-100">{profile || 'unknown'}</span>
+        </div>
+        <div className="truncate font-mono text-[11px] text-slate-300" title={rosbridgeUrl || ''}>
           {rosbridgeUrl || '未配置'}
         </div>
       </div>
@@ -203,23 +217,17 @@ function RosbridgePanel({
       {!isConnected ? (
         <button
           onClick={reconnect}
-          className="w-full px-3 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+          className="h-9 w-full rounded bg-green-500 px-3 text-sm text-white transition hover:bg-green-600"
         >
           连接机器人
         </button>
       ) : (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs text-green-600">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-            已连接机器人
-          </div>
-          <button
-            onClick={disconnect}
-            className="w-full px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-          >
-            断开连接
-          </button>
-        </div>
+        <button
+          onClick={disconnect}
+          className="h-9 w-full rounded bg-red-500 px-3 text-sm text-white transition hover:bg-red-600"
+        >
+          断开连接
+        </button>
       )}
     </div>
   );
@@ -230,9 +238,11 @@ function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) 
   const { maps, fetchMaps, loading: mapsLoading } = useMapManager();
   const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
   const [saving, setSaving] = useState(false);
+  const mockSlam = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('mockSlam') === '1';
 
-  const isRobotMode = robotStatus.mode === 'slam';
-  const isRunning = isRobotMode || slamRunning;
+  const isRobotMode = mockSlam || robotStatus.mode === 'slam';
+  const isRunning = mockSlam || isRobotMode || slamRunning;
 
   const handleStartSlam = async () => {
     await startSlam();
@@ -407,6 +417,13 @@ function NavigationPanel({
     }
   };
 
+  const compactOptionClass = (active: boolean) => [
+    'h-8 min-w-0 rounded border px-2 text-xs transition disabled:opacity-50',
+    active
+      ? 'border-cyan-300/70 bg-cyan-400/20 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.16)]'
+      : 'border-cyan-300/22 bg-slate-950/24 text-slate-300 hover:bg-cyan-500/12',
+  ].join(' ');
+
   if (loading) {
     return <div className="text-xs text-gray-500">正在扫描地图...</div>;
   }
@@ -420,21 +437,23 @@ function NavigationPanel({
   }
 
   return (
-    <div className="space-y-2">
-      <h4 className="text-xs font-medium text-gray-500">选择地图</h4>
-      <select
-        value={selectedMap || ''}
-        onChange={(e) => setSelectedMap(e.target.value || null)}
-        className="w-full px-2 py-1 text-xs border rounded"
-        disabled={isNavRunning}
-      >
-        <option value="">-- 请选择地图 --</option>
-        {maps.map((map) => (
-          <option key={map.name} value={map.name}>
-            {map.name}
-          </option>
-        ))}
-      </select>
+    <div className="space-y-3 text-xs text-slate-300">
+      <div className="space-y-1.5">
+        <h4 className="text-xs font-medium text-gray-500">选择地图</h4>
+        <select
+          value={selectedMap || ''}
+          onChange={(e) => setSelectedMap(e.target.value || null)}
+          className="h-8 w-full rounded border px-2 text-xs"
+          disabled={isNavRunning}
+        >
+          <option value="">-- 请选择地图 --</option>
+          {maps.map((map) => (
+            <option key={map.name} value={map.name}>
+              {map.name}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {robotStatus.error && (
         <div className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
@@ -442,72 +461,36 @@ function NavigationPanel({
         </div>
       )}
 
-      {/* Stance selection - disabled during navigation */}
-      <div className="space-y-1">
-        <h4 className="text-xs font-medium text-gray-500">姿态</h4>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setStance('crouch')}
-            disabled={isNavRunning}
-            className={`flex-1 text-xs py-1 px-2 rounded border ${
-              stance === 'crouch'
-                ? 'bg-blue-100 border-blue-500 text-blue-700'
-                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
-            } disabled:opacity-50`}
-          >
-            蹲姿
-          </button>
-          <button
-            onClick={() => setStance('stand')}
-            disabled={isNavRunning}
-            className={`flex-1 text-xs py-1 px-2 rounded border ${
-              stance === 'stand'
-                ? 'bg-blue-100 border-blue-500 text-blue-700'
-                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
-            } disabled:opacity-50`}
-          >
-            站立
-          </button>
+      <div className="rounded-md border border-cyan-300/18 bg-cyan-950/18 p-2.5">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="font-medium text-slate-200">启动参数</span>
+          <span className="text-[11px] text-slate-500">影响导航启动</span>
         </div>
-      </div>
-
-      {/* Speed selection - disabled during navigation */}
-      <div className="space-y-1">
-        <h4 className="text-xs font-medium text-gray-500">速度</h4>
-        <div className="flex gap-1">
-          <button
-            onClick={() => setSpeed('high')}
-            disabled={isNavRunning}
-            className={`flex-1 text-xs py-1 px-2 rounded border ${
-              speed === 'high'
-                ? 'bg-blue-100 border-blue-500 text-blue-700'
-                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
-            } disabled:opacity-50`}
-          >
-            高
-          </button>
-          <button
-            onClick={() => setSpeed('medium')}
-            disabled={isNavRunning}
-            className={`flex-1 text-xs py-1 px-2 rounded border ${
-              speed === 'medium'
-                ? 'bg-blue-100 border-blue-500 text-blue-700'
-                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
-            } disabled:opacity-50`}
-          >
-            中
-          </button>
-          <button
-            onClick={() => setSpeed('low')}
-            disabled={isNavRunning}
-            className={`flex-1 text-xs py-1 px-2 rounded border ${
-              speed === 'low'
-                ? 'bg-blue-100 border-blue-500 text-blue-700'
-                : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
-            } disabled:opacity-50`}
-          >
-            低
-          </button>
+        <div className="grid grid-cols-[3.25rem_1fr] items-center gap-x-2 gap-y-2">
+          <span className="text-slate-400">速度</span>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              onClick={() => setSpeed('high')}
+              disabled={isNavRunning}
+              className={compactOptionClass(speed === 'high')}
+            >
+              高
+            </button>
+            <button
+              onClick={() => setSpeed('medium')}
+              disabled={isNavRunning}
+              className={compactOptionClass(speed === 'medium')}
+            >
+              中
+            </button>
+            <button
+              onClick={() => setSpeed('low')}
+              disabled={isNavRunning}
+              className={compactOptionClass(speed === 'low')}
+            >
+              低
+            </button>
+          </div>
         </div>
       </div>
 
@@ -515,9 +498,9 @@ function NavigationPanel({
         <button
           onClick={startNavigation}
           disabled={starting || stopping}
-          className="w-full bg-purple-600 text-white text-xs py-1 px-2 rounded hover:bg-purple-700 disabled:opacity-50"
+          className="h-9 w-full rounded border border-violet-300/38 bg-violet-500/72 px-2 text-xs text-white transition hover:bg-violet-500 disabled:opacity-50"
         >
-          {starting ? '启动中...' : `启动导航（${stance === 'stand' ? '站立' : '蹲姿'}，${speed === 'high' ? '高速' : speed === 'medium' ? '中速' : '低速'}）`}
+          {starting ? '启动中...' : `启动导航（${speed === 'high' ? '高速' : speed === 'medium' ? '中速' : '低速'}）`}
         </button>
       )}
 
@@ -724,23 +707,32 @@ function NavigationPanel({
 function AppContent() {
   const [showDebug, setShowDebug] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [activeConsoleTab, setActiveConsoleTab] = useState<'navigation' | 'teleop' | 'broadcast'>('teleop');
-  const [mainViewport, setMainViewport] = useState<MainViewport>('map');
+  const [activeConsoleTab, setActiveConsoleTab] = useState<'navigation' | 'teleop'>('teleop');
+  const [rightViewport, setRightViewport] = useState<MainViewport>('camera');
   const config = useServerConfig();
   const media = useRobotMedia(config?.media || null);
   const face = useFaceRecognition(config?.face || null, media.videoConnected);
   const wsUrl = config?.rosbridgeUrl || '';
   const {
     ros,
-    isConnected,
-    connectionState,
+    isConnected: realIsConnected,
+    connectionState: realConnectionState,
     error: rosError,
     reconnect,
     disconnect,
     reconnectCount,
   } = useRosConnection(wsUrl);
+  const mockConnected = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('mockConnected') === '1';
+  const isConnected = mockConnected ? true : realIsConnected;
+  const connectionState = mockConnected ? 'connected' : realConnectionState;
   const { subscriptionSettings } = useLayers();
   const { mode, setMode } = useMode();
+  const mockTeleop = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get('mockTeleop') === '1';
+  const [mockDisplayMode, setMockDisplayMode] = useState<'teleop' | null>(() => mockTeleop ? 'teleop' : null);
+  const displayMode = mockDisplayMode ?? mode;
+  const displayConsoleTab = mockDisplayMode ?? activeConsoleTab;
   const [navClickMode, setNavClickMode] = useState<NavClickMode>('none');
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const previousSelectedMapRef = useRef<string | null>(selectedMap);
@@ -834,11 +826,12 @@ function AppContent() {
   };
 
   const handleModeChange = (nextMode: 'navigation' | 'teleop') => {
+    setMockDisplayMode(null);
     setActiveConsoleTab(nextMode);
     setMode(nextMode);
   };
 
-  const guidanceText = mode === 'teleop'
+  const guidanceText = displayMode === 'teleop'
     ? '使用 W/A/S/D 或方向键移动机器人'
     : navClickMode === 'initial_pose'
       ? '在地图上拖拽以设置初始位姿'
@@ -870,17 +863,9 @@ function AppContent() {
             </div>
           </div>
 
-          <nav className="header-mode-shell mx-auto">
-            <TopModeButton active={activeConsoleTab === 'navigation'} title="导航模式" subtitle="Navigation" icon={Route} onClick={() => handleModeChange('navigation')} />
-            <TopModeButton active={activeConsoleTab === 'teleop'} title="遥操作" subtitle="Teleop" icon={Gamepad2} onClick={() => handleModeChange('teleop')} />
-            <button
-              type="button"
-              onClick={() => setActiveConsoleTab('broadcast')}
-              className={`header-mode-button group ${activeConsoleTab === 'broadcast' ? 'is-active' : ''}`}
-            >
-              <Radio className={`h-4 w-4 ${activeConsoleTab === 'broadcast' ? 'text-cyan-300' : 'text-slate-500 group-hover:text-cyan-300'}`} />
-              <span><span className="block text-sm font-semibold leading-5">语音广播</span><span className="block text-[10px] uppercase tracking-[0.18em] text-slate-400">Broadcast</span></span>
-            </button>
+          <nav className="header-mode-shell mx-auto translate-x-8">
+            <TopModeButton active={displayConsoleTab === 'navigation'} title="导航模式" subtitle="Navigation" icon={Route} onClick={() => handleModeChange('navigation')} />
+            <TopModeButton active={displayConsoleTab === 'teleop'} title="遥操作" subtitle="Teleop" icon={Gamepad2} onClick={() => handleModeChange('teleop')} />
           </nav>
 
           <div className="header-status-shell flex min-w-0 flex-nowrap items-center justify-end gap-4 overflow-hidden px-5 py-3">
@@ -909,18 +894,18 @@ function AppContent() {
 
         <div className="grid min-h-0 flex-1 grid-cols-[360px_minmax(560px,1fr)_420px] gap-4">
           <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-            <TechPanel title="连接状态" className="operator-panel"><RosbridgePanel isConnected={isConnected} reconnect={reconnect} disconnect={disconnect} profile={config?.profile} rosbridgeUrl={wsUrl} /></TechPanel>
-            <TechPanel title={mode === 'teleop' ? '建图控制' : '导航控制'} className="operator-panel" action={<ChevronDown className="h-4 w-4 text-cyan-300" />}>
-              {mode === 'teleop' ? (
+            <TechPanel title="连接状态" className="operator-panel" bodyClassName="p-3"><RosbridgePanel isConnected={isConnected} reconnect={reconnect} disconnect={disconnect} profile={config?.profile} rosbridgeUrl={wsUrl} /></TechPanel>
+            <TechPanel title={displayMode === 'teleop' ? '建图控制' : '导航控制'} className="operator-panel" bodyClassName="p-3" action={<ChevronDown className="h-4 w-4 text-cyan-300" />}>
+              {displayMode === 'teleop' ? (
                 <MappingPanel ros={ros} isConnected={isConnected} />
               ) : (
                 <NavigationPanel navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} setSelectedMap={setSelectedMap} taskMode={navigationTaskMode} setTaskMode={setNavigationTaskMode} patrolPoints={patrolPoints} onRemovePatrolPoint={removePatrolPoint} onClearPatrolPoints={clearPatrolPoints} onStartPatrolTask={startPatrolTask} onCancelTask={navigationTasks.cancelCurrentTask} taskStatus={navigationTasks.status} taskRunning={navigationTasks.isRunning} ros={ros} isConnected={isConnected} />
               )}
             </TechPanel>
-            <TechPanel title="系统设置">
+            <TechPanel title="系统设置" bodyClassName="p-3">
               <div className="space-y-3 text-sm text-slate-300">
-                {[{ icon: Layers, label: '图层管理', value: '已启用' }, { icon: Radio, label: '数据接收', value: subscriptionSettings.paused ? '暂停接收' : '接收中' }, { icon: Activity, label: '接收频率', value: subscriptionSettings.rate > 0 ? subscriptionSettings.rate + ' Hz' : 'Unlimited' }, { icon: MapPinned, label: '当前模式', value: mode === 'teleop' ? '遥操作' : '导航模式' }, { icon: ShieldCheck, label: '网络设置', value: isConnected ? '已连接' : '离线' }].map(({ icon: Icon, label, value }) => (
-                  <div key={label} className="flex items-center justify-between border-b border-cyan-400/10 pb-2 last:border-b-0 last:pb-0"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-cyan-300" /><span>{label}</span></div><span className={value === '已连接' || value === '接收中' ? 'text-emerald-300' : 'text-slate-300'}>{value}</span></div>
+                {[{ icon: Layers, label: '图层管理', value: '已启用' }, { icon: Radio, label: '数据接收', value: subscriptionSettings.paused ? '暂停接收' : '接收中' }, { icon: Activity, label: '接收频率', value: subscriptionSettings.rate > 0 ? subscriptionSettings.rate + ' Hz' : 'Unlimited' }, { icon: MapPinned, label: '当前模式', value: displayMode === 'teleop' ? '遥操作' : '导航模式' }].map(({ icon: Icon, label, value }) => (
+                  <div key={label} className="flex items-center justify-between border-b border-cyan-400/10 pb-2 last:border-b-0 last:pb-0"><div className="flex items-center gap-2"><Icon className="h-4 w-4 text-cyan-300" /><span>{label}</span></div><span className={value === '接收中' ? 'text-emerald-300' : 'text-slate-300'}>{value}</span></div>
                 ))}
               </div>
             </TechPanel>
@@ -945,7 +930,7 @@ function AppContent() {
           <main className="flex min-h-0 flex-col gap-3">
             <div className="map-frame relative min-h-0 overflow-hidden" style={{ backgroundImage: 'url(' + borderImage + ')' }}>
               {showDebug && <DebugPanel />}
-              {mainViewport === 'map' ? (
+              {rightViewport === 'camera' ? (
                 <div className="relative z-10 h-full overflow-hidden rounded-lg bg-slate-950/26">
                   <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} />
                   <div className="absolute left-5 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2"><MapToolButton icon={ZoomIn} /><MapToolButton icon={ZoomOut} /><MapToolButton icon={Maximize2} /><MapToolButton icon={LocateFixed} /><MapToolButton icon={Route} active={navClickMode !== 'none'} /></div>
@@ -1091,21 +1076,21 @@ function AppContent() {
 
           <aside className="flex min-h-0 flex-col gap-3 overflow-y-auto pl-1">
             <TechPanel
-              title={mainViewport === 'map' ? '摄像机视角' : '地图概况'}
+              title={rightViewport === 'camera' ? '摄像机视角' : '地图概况'}
               action={(
                 <div className="view-switch-control">
-                  <button type="button" onClick={() => setMainViewport('map')} className={mainViewport === 'map' ? 'is-active' : ''}>地图</button>
-                  <button type="button" onClick={() => setMainViewport('camera')} className={mainViewport === 'camera' ? 'is-active' : ''}>摄像实况</button>
+                  <button type="button" onClick={() => setRightViewport('map')} className={rightViewport === 'map' ? 'is-active' : ''}>地图</button>
+                  <button type="button" onClick={() => setRightViewport('camera')} className={rightViewport === 'camera' ? 'is-active' : ''}>摄像实况</button>
                 </div>
               )}
               className="media-panel"
             >
-              {mainViewport === 'map' ? (
-                <MediaViewport videoRef={media.videoRef} audioRef={media.audioRef} videoConnected={media.videoConnected} audioMonitoring={media.audioConnected} talkbackActive={media.talkbackActive} loadingAction={media.loadingAction} error={media.error} faceSnapshot={face.snapshot} onRefresh={() => void media.refreshStatus()} onToggleVideo={() => { if (media.videoConnected) { void media.stopVideo(); return; } void media.startVideo(); }} onToggleAudio={() => { if (media.audioConnected) { media.stopAudioMonitor(); return; } void media.startAudioMonitor(); }} onToggleTalkback={() => { if (media.talkbackActive) { void media.stopTalkback(); return; } void media.startTalkback(); }} />
-              ) : (
+              {rightViewport === 'map' ? (
                 <div className="map-overview relative aspect-video overflow-hidden rounded-xl border border-cyan-400/20 bg-slate-950/50">
                   <MapCanvas ros={ros} isConnected={isConnected} navClickMode="none" selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} />
                 </div>
+              ) : (
+                <MediaViewport videoRef={media.videoRef} audioRef={media.audioRef} videoConnected={media.videoConnected} audioMonitoring={media.audioConnected} talkbackActive={media.talkbackActive} loadingAction={media.loadingAction} error={media.error} faceSnapshot={face.snapshot} onRefresh={() => void media.refreshStatus()} onToggleVideo={() => { if (media.videoConnected) { void media.stopVideo(); return; } void media.startVideo(); }} onToggleAudio={() => { if (media.audioConnected) { media.stopAudioMonitor(); return; } void media.startAudioMonitor(); }} onToggleTalkback={() => { if (media.talkbackActive) { void media.stopTalkback(); return; } void media.startTalkback(); }} />
               )}
             </TechPanel>
             <TechPanel title="图例说明" className="legend-panel"><div className="grid grid-cols-[1fr_150px] gap-3"><LayerControl /><img src={robotWireImage} alt="" className="h-32 w-full object-contain opacity-80" /></div></TechPanel>
@@ -1129,7 +1114,7 @@ function AppContent() {
                   </div>
                   <div className="flex justify-between text-xs text-slate-200">
                     <span>当前模式</span>
-                    <span>{mode === 'teleop' ? '遥操作' : '导航模式'}</span>
+                    <span>{displayMode === 'teleop' ? '遥操作' : '导航模式'}</span>
                   </div>
                 </div>
               </div>
