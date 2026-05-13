@@ -42,7 +42,7 @@ const MAX_SCAN_POINTS = 360;
 export function MapCanvas({
   ros,
   isConnected,
-  mapTopic = '/map',
+  mapTopic = '/map_web',
   navClickMode = 'none',
   setNavClickMode,
   selectedMap = null,

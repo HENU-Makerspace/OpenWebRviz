@@ -115,6 +115,17 @@ def generate_launch_description():
             }],
         ),
         Node(
+            package='jetson_node_pkg',
+            executable='map_throttle',
+            name='map_throttle',
+            output='screen',
+            parameters=[{
+                'input_topic': '/map',
+                'output_topic': '/map_web',
+                'publish_on_metadata_change': True,
+            }],
+        ),
+        Node(
             package='slam_toolbox',
             executable='async_slam_toolbox_node',
             name='slam_toolbox',
