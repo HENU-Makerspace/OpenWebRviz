@@ -465,6 +465,23 @@ function NavigationPanel({
           <span className="text-[11px] text-slate-500">影响导航启动</span>
         </div>
         <div className="grid grid-cols-[3.25rem_1fr] items-center gap-x-2 gap-y-2">
+          <span className="text-slate-400">姿态</span>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => setStance('crouch')}
+              disabled={isNavRunning}
+              className={compactOptionClass(stance === 'crouch')}
+            >
+              蹲姿
+            </button>
+            <button
+              onClick={() => setStance('stand')}
+              disabled={isNavRunning}
+              className={compactOptionClass(stance === 'stand')}
+            >
+              站立
+            </button>
+          </div>
           <span className="text-slate-400">速度</span>
           <div className="grid grid-cols-3 gap-1.5">
             <button
@@ -498,7 +515,7 @@ function NavigationPanel({
           disabled={starting || stopping}
           className="h-9 w-full rounded border border-violet-300/38 bg-violet-500/72 px-2 text-xs text-white transition hover:bg-violet-500 disabled:opacity-50"
         >
-          {starting ? '启动中...' : `启动导航（${speed === 'high' ? '高速' : speed === 'medium' ? '中速' : '低速'}）`}
+          {starting ? '启动中...' : `启动导航（${stance === 'stand' ? '站立' : '蹲姿'}，${speed === 'high' ? '高速' : speed === 'medium' ? '中速' : '低速'}）`}
         </button>
       )}
 
