@@ -24,29 +24,47 @@ except ImportError:
 
 
 def discover_server_url():
-    """Discover a reachable local server URL by scanning the robot subnet."""
+    """Discover a reachable local server URL by scanning every local subnet."""
     import socket
 
-    # Get robot's own IP to determine subnet
-    robot_ip = None
+    subnet_prefixes = []
+
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        robot_ip = s.getsockname()[0]
-        s.close()
+        output = subprocess.check_output(
+            ['hostname', '-I'],
+            text=True,
+            timeout=2,
+        )
+        for value in output.split():
+            parts = value.split('.')
+            if len(parts) == 4 and parts[0] not in ('127', '169'):
+                subnet_prefixes.append('.'.join(parts[:3]))
     except:
         pass
 
-    # Build full IP range to scan (entire subnet)
-    if robot_ip:
-        parts = robot_ip.split('.')
-        subnet = f'{parts[0]}.{parts[1]}.{parts[2]}'
-        ips_to_try = [f'{subnet}.{i}' for i in range(1, 255)]
-    else:
-        # Fallback: common subnets - try all of them
-        ips_to_try = []
-        for subnet_prefix in ['192.168.1', '192.168.0', '192.168.2', '10.0.0']:
-            ips_to_try.extend([f'{subnet_prefix}.{i}' for i in range(1, 255)])
+    if not subnet_prefixes:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            parts = s.getsockname()[0].split('.')
+            s.close()
+            if len(parts) == 4:
+                subnet_prefixes.append('.'.join(parts[:3]))
+        except:
+            pass
+
+    for fallback_prefix in ['192.168.1', '192.168.43', '192.168.10', '192.168.0', '192.168.2', '10.0.0']:
+        if fallback_prefix not in subnet_prefixes:
+            subnet_prefixes.append(fallback_prefix)
+
+    ips_to_try = []
+    seen_ips = set()
+    for subnet_prefix in subnet_prefixes:
+        for i in range(1, 255):
+            ip = f'{subnet_prefix}.{i}'
+            if ip not in seen_ips:
+                seen_ips.add(ip)
+                ips_to_try.append(ip)
 
     # Try /api/network endpoint on each IP in parallel with threading
     import threading
@@ -57,7 +75,7 @@ def discover_server_url():
             return
         try:
             for port in (4101, 4001):
-                resp = requests.get(f'http://{ip}:{port}/api/network', timeout=1)
+                resp = requests.get(f'http://{ip}:{port}/api/network', timeout=0.35)
                 if resp.status_code != 200:
                     continue
                 data = resp.json()
@@ -65,7 +83,8 @@ def discover_server_url():
                     server_ip = data['ips'][0]
                     discovered_port = data.get('port') or port
                     with result['lock']:
-                        result['url'] = f'http://{server_ip}:{discovered_port}'
+                        if not result['url']:
+                            result['url'] = f'http://{server_ip}:{discovered_port}'
                     return
         except:
             pass
@@ -79,12 +98,16 @@ def discover_server_url():
         # Limit concurrent connections
         if len(threads) >= 50:
             for t in threads[:50]:
-                t.join()
+                t.join(timeout=0.5)
+            if result['url']:
+                break
             threads = threads[50:]
 
     # Wait for remaining threads
     for t in threads:
-        t.join()
+        t.join(timeout=0.5)
+        if result['url']:
+            break
 
     if result['url']:
         return result['url']

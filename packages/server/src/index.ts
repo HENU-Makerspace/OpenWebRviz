@@ -1156,11 +1156,16 @@ app.get('/api/slam/status', async (c) => {
 // Get server network info
 app.get('/api/network', async (c) => {
   try {
+    const requestUrl = new URL(c.req.url);
     const { stdout } = await execAsync('hostname -I 2>/dev/null || ip addr show | grep inet | grep -v 127.0.0.1 | head -1');
-    const ips = stdout.trim().split(' ').filter(ip => ip.match(/\d+\.\d+\.\d+\.\d+/));
+    const ips = stdout.trim().split(/\s+/).filter(ip => ip.match(/^\d+\.\d+\.\d+\.\d+$/));
+    const requestHost = requestUrl.hostname;
+    const preferredIps = requestHost && requestHost !== 'localhost' && requestHost !== '127.0.0.1'
+      ? [requestHost, ...ips.filter((ip) => ip !== requestHost)]
+      : ips;
 
     return c.json({
-      ips,
+      ips: preferredIps,
       hostname: os.hostname(),
       port: PORT,
     });
