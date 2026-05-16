@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/face/.venv/bin/python %h/bin/webbot-face-service.py --host 127.0.0.1 --port 19100 --frame-dir %h/.local/state/webbot-media/frames --device /dev/video0 --width 1280 --height 720 --interval-ms 150 --frame-stale-ms 1500 --similarity-threshold 0.35 --model-root %h/face/insightface --face-db-dir %h/face/face_db --registry-path %h/face/registry.json
+ExecStart=%h/face/.venv/bin/python %h/bin/webbot-face-service.py --host 0.0.0.0 --port 19100 --frame-dir %h/.local/state/webbot-media/frames --device /dev/v4l/by-id/usb-LRCP_imx334_LRCP_imx334_01.00.00-video-index0 --width 1280 --height 720 --interval-ms 150 --frame-stale-ms 1500 --similarity-threshold 0.35 --model-root %h/face/insightface --face-db-dir %h/face/face_db --registry-path %h/face/registry.json
 Restart=always
 RestartSec=2
 

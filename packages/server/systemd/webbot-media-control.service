@@ -6,7 +6,7 @@ Requires=webbot-media.service
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 %h/bin/webbot-media-control.py --host 127.0.0.1 --port 19110 --video-service webbot-video.service --media-service webbot-media.service --frame-dir %h/.local/state/webbot-media/frames --video-device /dev/video0 --start-timeout-ms 12000
+ExecStart=/usr/bin/python3 %h/bin/webbot-media-control.py --host 0.0.0.0 --port 19110 --video-service webbot-video.service --media-service webbot-media.service --frame-dir %h/.local/state/webbot-media/frames --video-device /dev/v4l/by-id/usb-LRCP_imx334_LRCP_imx334_01.00.00-video-index0 --start-timeout-ms 12000
 Restart=always
 RestartSec=2
 
