@@ -42,7 +42,7 @@ const MAX_SCAN_POINTS = 360;
 export function MapCanvas({
   ros,
   isConnected,
-  mapTopic = '/map_web',
+  mapTopic = '/map',
   navClickMode = 'none',
   setNavClickMode,
   selectedMap = null,
@@ -109,8 +109,15 @@ export function MapCanvas({
       return;
     }
 
-    ignoredNavMapRef.current = mapData;
     mapRasterRef.current = null;
+    if (mapData) {
+      ignoredNavMapRef.current = null;
+      setFrozenNavMap(mapData);
+      setDisplayMapData(mapData);
+      return;
+    }
+
+    ignoredNavMapRef.current = null;
     setFrozenNavMap(null);
     setDisplayMapData(null);
   }, [mode, selectedMap]);
@@ -122,7 +129,6 @@ export function MapCanvas({
     }
 
     if (!frozenNavMap && mapData && mapData !== ignoredNavMapRef.current) {
-      ignoredNavMapRef.current = null;
       setFrozenNavMap(mapData);
     }
   }, [mode, mapData, frozenNavMap]);
