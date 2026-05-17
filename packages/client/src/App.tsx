@@ -50,11 +50,6 @@ interface ServerConfig {
     janusScriptUrl: string;
     streamingUrl: string;
     audioBridgeUrl: string;
-    iceServers?: Array<{
-      urls: string | string[];
-      username?: string;
-      credential?: string;
-    }>;
     preferredVideoStreamId: number;
     preferredAudioStreamId: number;
     audioBridgeRoom: number;

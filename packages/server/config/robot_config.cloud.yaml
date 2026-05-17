@@ -54,10 +54,6 @@ media:
   janus_script_asset: "janus.js"
   streaming_path: "/demos/streaming.html#"
   audiobridge_path: "/demos/audiobridge.html"
-  stun_url: "stun:stun.chat.bilibili.com:3478"
-  turn_url: "turn:qiuhua.ying-guang.com:3478?transport=udp"
-  turn_username: "webbot"
-  turn_credential: "webbot_turn_20260517"
   audio_capture_device: "plughw:CARD=UACDemoV10,DEV=0"
   audio_playback_device: "plughw:CARD=UACDemoV10,DEV=0"
   audio_capture_port: 5005

@@ -257,10 +257,6 @@ const MEDIA_AUDIO_BRIDGE_SECRET = config?.media?.audiobridge_secret || 'adminpwd
 const MEDIA_AUDIO_BRIDGE_FORWARD_HOST = config?.media?.audiobridge_forward_host || '127.0.0.1';
 const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port || MEDIA_AUDIO_PLAYBACK_PORT;
 const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
-const MEDIA_TURN_URL = String(config?.media?.turn_url || '').trim();
-const MEDIA_TURN_USERNAME = String(config?.media?.turn_username || '').trim();
-const MEDIA_TURN_CREDENTIAL = String(config?.media?.turn_credential || '').trim();
-const MEDIA_STUN_URL = String(config?.media?.stun_url || '').trim();
 const MEDIA_CONTROL_PROXY_HOST = config?.media?.control_proxy_host || '127.0.0.1';
 const MEDIA_CONTROL_PROXY_PORT = config?.media?.control_proxy_port || 19110;
 const FRONTEND_WS_URL = process.env.FRONTEND_WS_URL || config?.frontend?.ws_url || '';
@@ -553,18 +549,6 @@ app.get('/api/config', (c) => {
   const publicOrigin = config?.frontend?.api_url || `${forwardedProto}://${forwardedHost}`;
   const publicWsOrigin = FRONTEND_WS_URL || `${forwardedProto === 'https' ? 'wss' : 'ws'}://${forwardedHost}/rosbridge/`;
 
-  const iceServers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [];
-  if (MEDIA_STUN_URL) {
-    iceServers.push({ urls: MEDIA_STUN_URL });
-  }
-  if (MEDIA_TURN_URL) {
-    iceServers.push({
-      urls: MEDIA_TURN_URL,
-      username: MEDIA_TURN_USERNAME,
-      credential: MEDIA_TURN_CREDENTIAL,
-    });
-  }
-
   return c.json({
     serverUrl: publicOrigin,
     profile: configProfile,
@@ -578,7 +562,6 @@ app.get('/api/config', (c) => {
       janusScriptUrl: `/api/media/assets/${JANUS_SCRIPT_ASSET}`,
       streamingUrl: `${publicOrigin}/janus-demo${JANUS_STREAMING_PATH}`,
       audioBridgeUrl: `${publicOrigin}/janus-demo${JANUS_AUDIOBRIDGE_PATH}`,
-      iceServers,
       preferredVideoStreamId: Number(MEDIA_VIDEO_STREAM_ID) || 0,
       preferredAudioStreamId: Number(MEDIA_AUDIO_STREAM_ID) || 0,
       audioBridgeRoom: Number(MEDIA_AUDIO_BRIDGE_ROOM),
