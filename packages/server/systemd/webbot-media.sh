@@ -31,11 +31,6 @@ AUDIOBRIDGE_SECRET="adminpwd"
 AUDIOBRIDGE_SAMPLING_RATE="48000"
 JANUS_STUN_SERVER="stun.chat.bilibili.com"
 JANUS_STUN_PORT="3478"
-JANUS_TURN_SERVER="182.43.86.126"
-JANUS_TURN_PORT="3478"
-JANUS_TURN_TYPE="udp"
-JANUS_TURN_USER="webbot"
-JANUS_TURN_PWD="webbot_turn_20260517"
 MEDIA_ENV_FILE="${HOME}/.config/webbot/media.env"
 
 if [[ -f "${MEDIA_ENV_FILE}" ]]; then
@@ -70,21 +65,6 @@ prepare_janus_runtime_config() {
     fi
     if grep -Eq '^[[:space:]]*#?[[:space:]]*stun_port[[:space:]]*=' "${main_cfg}"; then
       sed -i "s/^[[:space:]]*#\\?[[:space:]]*stun_port[[:space:]]*=.*$/\tstun_port = ${JANUS_STUN_PORT}/" "${main_cfg}"
-    fi
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*turn_server[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*turn_server[[:space:]]*=.*$/\tturn_server = \"${JANUS_TURN_SERVER//\//\\/}\"/" "${main_cfg}"
-    fi
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*turn_port[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*turn_port[[:space:]]*=.*$/\tturn_port = ${JANUS_TURN_PORT}/" "${main_cfg}"
-    fi
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*turn_type[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*turn_type[[:space:]]*=.*$/\tturn_type = \"${JANUS_TURN_TYPE//\//\\/}\"/" "${main_cfg}"
-    fi
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*turn_user[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*turn_user[[:space:]]*=.*$/\tturn_user = \"${JANUS_TURN_USER//\//\\/}\"/" "${main_cfg}"
-    fi
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*turn_pwd[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*turn_pwd[[:space:]]*=.*$/\tturn_pwd = \"${JANUS_TURN_PWD//\//\\/}\"/" "${main_cfg}"
     fi
   fi
 
