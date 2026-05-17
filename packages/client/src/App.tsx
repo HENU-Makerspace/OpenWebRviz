@@ -235,7 +235,7 @@ function RosbridgePanel({
 
 function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) {
   const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
-  const { maps, fetchMaps, loading: mapsLoading } = useMapManager(ros, isConnected);
+  const { maps, loading: mapsLoading } = useMapManager(ros, isConnected);
   const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
   const [saving, setSaving] = useState(false);
   const mockSlam = typeof window !== 'undefined'
@@ -257,10 +257,6 @@ function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) 
     console.log('[SaveMap] Starting save on robot...');
     const result = await saveMap();
     console.log('[SaveMap] Robot save result:', result);
-    if (result) {
-      console.log('[SaveMap] Refreshing maps from server...');
-      await fetchMaps();
-    }
     console.log('[SaveMap] Done, maps:', maps);
     setSaving(false);
   };
@@ -370,7 +366,7 @@ function NavigationPanel({
   ros,
   isConnected,
 }: NavigationPanelProps & { ros: any; isConnected: boolean }) {
-  const { maps, fetchMaps, loading } = useMapManager(ros, isConnected);
+  const { maps, loading } = useMapManager(ros, isConnected);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [stance, setStance] = useState<Stance>('crouch');
@@ -379,10 +375,6 @@ function NavigationPanel({
   const { status: robotStatus, startNavigation: startNav, stopAll } = useSystemManager(ros, isConnected);
 
   const isNavRunning = robotStatus.mode === 'navigation';
-
-  useEffect(() => {
-    fetchMaps();
-  }, [fetchMaps]);
 
   const startNavigation = async () => {
     console.log('[StartNav] clicked, selectedMap:', selectedMap, 'stance:', stance, 'speed:', speed, 'isNavRunning:', isNavRunning);

@@ -59,40 +59,29 @@ export function useMapManager(ros: ROSLIB.Ros | null = null, isConnected: boolea
   const gotTopicDataRef = useRef(false);
 
   const fetchMaps = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/maps');
-      const data = await res.json();
-      setMaps(data.maps || []);
-    } catch (e) {
-      setError('Failed to connect to server');
-      setMaps([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    return maps;
+  }, [maps]);
 
   const deleteMap = useCallback(async (name: string) => {
     setLoading(true);
     setError(null);
     try {
       await fetch(`/api/maps/${name}`, { method: 'DELETE' });
-      await fetchMaps();
     } catch (e) {
       setError('Failed to connect to server');
     } finally {
       setLoading(false);
     }
-  }, [fetchMaps]);
+  }, []);
 
   useEffect(() => {
     if (!ros || !isConnected) {
-      if (!gotTopicDataRef.current) {
-        void fetchMaps();
-      }
       return;
     }
+
+    setLoading(true);
+    setError(null);
+    gotTopicDataRef.current = false;
 
     const topic = new ROSLIB.Topic({
       ros,
@@ -125,7 +114,7 @@ export function useMapManager(ros: ROSLIB.Ros | null = null, isConnected: boolea
     return () => {
       topic.unsubscribe();
     };
-  }, [fetchMaps, isConnected, ros]);
+  }, [isConnected, ros]);
 
   return {
     maps,
