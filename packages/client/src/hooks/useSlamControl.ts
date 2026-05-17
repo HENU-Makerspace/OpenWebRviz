@@ -57,10 +57,45 @@ export function useMapManager(ros: ROSLIB.Ros | null = null, isConnected: boolea
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const gotTopicDataRef = useRef(false);
+  const fallbackTimerRef = useRef<number | null>(null);
+  const lastPersistedPayloadRef = useRef<string | null>(null);
 
   const fetchMaps = useCallback(async () => {
-    return maps;
-  }, [maps]);
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/maps');
+      const data = await res.json();
+      const nextMaps = Array.isArray(data.maps) ? data.maps : [];
+      setMaps(nextMaps);
+      return nextMaps;
+    } catch (e) {
+      setError('Failed to load cached map list');
+      setMaps([]);
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const persistMaps = useCallback(async (nextMaps: SavedMap[]) => {
+    const payload = JSON.stringify({ maps: nextMaps });
+    if (lastPersistedPayloadRef.current === payload) {
+      return;
+    }
+
+    lastPersistedPayloadRef.current = payload;
+
+    try {
+      await fetch('/api/maps/list', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+    } catch (e) {
+      setError('Failed to cache map list locally');
+    }
+  }, []);
 
   const deleteMap = useCallback(async (name: string) => {
     setLoading(true);
@@ -75,8 +110,15 @@ export function useMapManager(ros: ROSLIB.Ros | null = null, isConnected: boolea
   }, []);
 
   useEffect(() => {
+    if (fallbackTimerRef.current != null) {
+      window.clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = null;
+    }
+
     if (!ros || !isConnected) {
-      return;
+      gotTopicDataRef.current = false;
+      void fetchMaps();
+      return undefined;
     }
 
     setLoading(true);
@@ -99,22 +141,34 @@ export function useMapManager(ros: ROSLIB.Ros | null = null, isConnected: boolea
         const parsed = JSON.parse(msg.data);
         const nextMaps = Array.isArray(parsed?.maps) ? parsed.maps : [];
         gotTopicDataRef.current = true;
+        if (fallbackTimerRef.current != null) {
+          window.clearTimeout(fallbackTimerRef.current);
+          fallbackTimerRef.current = null;
+        }
         setMaps(nextMaps);
         setError(null);
         setLoading(false);
+        void persistMaps(nextMaps);
       } catch (e) {
         setError('Failed to parse map list topic');
       }
     });
 
-    if (!gotTopicDataRef.current) {
-      void fetchMaps();
-    }
+    fallbackTimerRef.current = window.setTimeout(() => {
+      fallbackTimerRef.current = null;
+      if (!gotTopicDataRef.current) {
+        void fetchMaps();
+      }
+    }, 1500);
 
     return () => {
+      if (fallbackTimerRef.current != null) {
+        window.clearTimeout(fallbackTimerRef.current);
+        fallbackTimerRef.current = null;
+      }
       topic.unsubscribe();
     };
-  }, [isConnected, ros]);
+  }, [fetchMaps, isConnected, persistMaps, ros]);
 
   return {
     maps,
