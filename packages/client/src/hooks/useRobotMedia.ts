@@ -7,6 +7,11 @@ export interface MediaConfig {
   janusScriptUrl: string;
   streamingUrl: string;
   audioBridgeUrl: string;
+  iceServers?: Array<{
+    urls: string | string[];
+    username?: string;
+    credential?: string;
+  }>;
   preferredVideoStreamId: number;
   preferredAudioStreamId: number;
   audioBridgeRoom: number;
@@ -324,6 +329,7 @@ export function useRobotMedia(config: MediaConfig | null) {
       janusCreatePromiseRef.current = new Promise<any>((resolve, reject) => {
         const janus = new window.Janus({
           server: config.janusApiUrl,
+          iceServers: config.iceServers,
           success: () => {
             janusRef.current = janus;
             janusCreatePromiseRef.current = null;
