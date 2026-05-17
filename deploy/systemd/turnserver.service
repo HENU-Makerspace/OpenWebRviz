@@ -1,0 +1,15 @@
+[Unit]
+Description=TURN Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/opt/coturn/bin/turnserver -c /etc/turnserver.conf
+Restart=always
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
