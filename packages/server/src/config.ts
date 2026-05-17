@@ -29,11 +29,10 @@ export function parseYamlConfig(filePath: string) {
       continue;
     }
 
-    const match = trimmed.match(/^([^:]+):\s*(.*)$/);
+    const match = trimmed.match(/^(\w+):\s*(.+)$/);
     if (match && currentSection) {
-      const key = match[1].trim();
-      const rawValue = match[2].trim();
-      const raw = rawValue.replace(/^["']|["']$/g, '');
+      const key = match[1];
+      const raw = match[2].trim().replace(/^["']|["']$/g, '');
       const lower = raw.toLowerCase();
       if (lower === 'true') {
         config[currentSection][key] = true;
@@ -45,7 +44,7 @@ export function parseYamlConfig(filePath: string) {
       }
 
       const num = Number(raw);
-      config[currentSection][key] = Number.isNaN(num) || raw.includes('.') || raw.includes(':') || raw.includes('?') ? raw : num;
+      config[currentSection][key] = Number.isNaN(num) || raw.includes('.') ? raw : num;
     }
   }
 
