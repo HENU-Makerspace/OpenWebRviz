@@ -258,6 +258,7 @@ const MEDIA_AUDIO_BRIDGE_FORWARD_HOST = config?.media?.audiobridge_forward_host 
 const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port || MEDIA_AUDIO_PLAYBACK_PORT;
 const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
 const MEDIA_TURN_URL = String(config?.media?.turn_url || '').trim();
+const MEDIA_TURN_URL_TCP = String(config?.media?.turn_url_tcp || '').trim();
 const MEDIA_TURN_USERNAME = String(config?.media?.turn_username || '').trim();
 const MEDIA_TURN_CREDENTIAL = String(config?.media?.turn_credential || '').trim();
 const MEDIA_STUN_URL = String(config?.media?.stun_url || '').trim();
@@ -560,6 +561,13 @@ app.get('/api/config', (c) => {
   if (MEDIA_TURN_URL) {
     iceServers.push({
       urls: MEDIA_TURN_URL,
+      username: MEDIA_TURN_USERNAME,
+      credential: MEDIA_TURN_CREDENTIAL,
+    });
+  }
+  if (MEDIA_TURN_URL_TCP) {
+    iceServers.push({
+      urls: MEDIA_TURN_URL_TCP,
       username: MEDIA_TURN_USERNAME,
       credential: MEDIA_TURN_CREDENTIAL,
     });
