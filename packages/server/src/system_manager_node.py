@@ -9,8 +9,10 @@ from datetime import datetime, timezone
 import rclpy
 import requests
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_srvs.srv import Trigger
 from jetson_interfaces.srv import StartNav
+from std_msgs.msg import String
 
 try:
     from geometry_msgs.msg import Twist
@@ -151,6 +153,7 @@ class SystemManager(Node):
         self.nav_motion_stance = 'crouch'
         self.nav_motion_last_cmd_time = None
         self.nav_motion_last_stop_time = 0.0
+        self.map_list_topic = '/system/map_list'
 
         # Use hardcoded server URL from parameter
         self.server_url = self.get_parameter('server_url').value
@@ -170,6 +173,14 @@ class SystemManager(Node):
         else:
             self.get_logger().warn('geometry_msgs.msg.Twist is unavailable; navigation cmd_vel watchdog is disabled')
 
+        map_list_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.map_list_pub = self.create_publisher(String, self.map_list_topic, map_list_qos)
+
         os.makedirs(self.maps_dir, exist_ok=True)
 
         self.create_service(Trigger, '/system/start_slam', self.handle_start_slam)
@@ -177,6 +188,8 @@ class SystemManager(Node):
         self.create_service(Trigger, '/system/stop_all', self.handle_stop_all)
         self.create_service(Trigger, '/system/save_map', self.handle_save_map)
         self.create_service(Trigger, '/system/status', self.handle_status)
+
+        self.publish_map_list()
 
         self.get_logger().info('System Manager is ready.')
 
@@ -502,17 +515,9 @@ class SystemManager(Node):
 
                 if os.path.exists(yaml_path) and os.path.exists(pgm_path):
                     try:
-                        upload_base_url = self.resolve_map_upload_url()
-                        map_list = self.build_map_list_payload()
-                        upload_url = f'{upload_base_url}/api/maps/list'
-                        self.get_logger().info(f'Uploading map list to {upload_url}...')
-                        upload_resp = requests.post(upload_url, json={'maps': map_list}, timeout=15)
-                        if upload_resp.status_code == 200:
-                            self.get_logger().info('Map list uploaded successfully')
-                        else:
-                            self.get_logger().warn(f'Map list upload failed: {upload_resp.status_code} {upload_resp.text}')
-                    except Exception as upload_err:
-                        self.get_logger().warn(f'Failed to upload map list: {upload_err}')
+                        self.publish_map_list()
+                    except Exception as publish_err:
+                        self.get_logger().warn(f'Failed to publish map list: {publish_err}')
 
                     response.success = True
                     response.message = f'Map saved: {yaml_path}'
@@ -553,6 +558,13 @@ class SystemManager(Node):
         except Exception as exc:
             self.get_logger().warn(f'Failed to build map list payload: {exc}')
         return maps
+
+    def publish_map_list(self):
+        map_list = self.build_map_list_payload()
+        message = String()
+        message.data = json.dumps({'maps': map_list}, ensure_ascii=True)
+        self.map_list_pub.publish(message)
+        self.get_logger().info(f'Published map list with {len(map_list)} entries on {self.map_list_topic}')
 
     def resolve_map_upload_url(self):
         discovered_url = discover_server_url()

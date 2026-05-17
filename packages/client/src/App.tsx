@@ -235,7 +235,7 @@ function RosbridgePanel({
 
 function MappingPanel({ ros, isConnected }: { ros: any; isConnected: boolean }) {
   const { status: robotStatus, startSlam, stopAll, saveMap } = useSystemManager(ros, isConnected);
-  const { maps, fetchMaps, loading: mapsLoading } = useMapManager();
+  const { maps, fetchMaps, loading: mapsLoading } = useMapManager(ros, isConnected);
   const { slamRunning, slamRunningInitialized, loading: slamLoading, usingTmux } = useSlamControl();
   const [saving, setSaving] = useState(false);
   const mockSlam = typeof window !== 'undefined'
@@ -370,7 +370,7 @@ function NavigationPanel({
   ros,
   isConnected,
 }: NavigationPanelProps & { ros: any; isConnected: boolean }) {
-  const { maps, fetchMaps, loading } = useMapManager();
+  const { maps, fetchMaps, loading } = useMapManager(ros, isConnected);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [stance, setStance] = useState<Stance>('crouch');

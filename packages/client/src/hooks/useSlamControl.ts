@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as ROSLIB from 'roslib';
 
 export interface SavedMap {
   name: string;
@@ -51,10 +52,11 @@ export function useSlamControl() {
   };
 }
 
-export function useMapManager() {
+export function useMapManager(ros: ROSLIB.Ros | null = null, isConnected: boolean = false) {
   const [maps, setMaps] = useState<SavedMap[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const gotTopicDataRef = useRef(false);
 
   const fetchMaps = useCallback(async () => {
     setLoading(true);
@@ -85,8 +87,45 @@ export function useMapManager() {
   }, [fetchMaps]);
 
   useEffect(() => {
-    fetchMaps();
-  }, [fetchMaps]);
+    if (!ros || !isConnected) {
+      if (!gotTopicDataRef.current) {
+        void fetchMaps();
+      }
+      return;
+    }
+
+    const topic = new ROSLIB.Topic({
+      ros,
+      name: '/system/map_list',
+      messageType: 'std_msgs/msg/String',
+    });
+
+    topic.subscribe((message: unknown) => {
+      const msg = message as { data?: string };
+      if (!msg?.data) {
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(msg.data);
+        const nextMaps = Array.isArray(parsed?.maps) ? parsed.maps : [];
+        gotTopicDataRef.current = true;
+        setMaps(nextMaps);
+        setError(null);
+        setLoading(false);
+      } catch (e) {
+        setError('Failed to parse map list topic');
+      }
+    });
+
+    if (!gotTopicDataRef.current) {
+      void fetchMaps();
+    }
+
+    return () => {
+      topic.unsubscribe();
+    };
+  }, [fetchMaps, isConnected, ros]);
 
   return {
     maps,
