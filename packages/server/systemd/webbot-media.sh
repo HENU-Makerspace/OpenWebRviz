@@ -29,8 +29,6 @@ VIDEO_STREAM_CODEC="h264"
 AUDIOBRIDGE_ROOM="1234"
 AUDIOBRIDGE_SECRET="adminpwd"
 AUDIOBRIDGE_SAMPLING_RATE="48000"
-JANUS_STUN_SERVER="stun.chat.bilibili.com"
-JANUS_STUN_PORT="3478"
 MEDIA_ENV_FILE="${HOME}/.config/webbot/media.env"
 
 if [[ -f "${MEDIA_ENV_FILE}" ]]; then
@@ -60,12 +58,10 @@ prepare_janus_runtime_config() {
 
   if [[ -f "${JANUS_CONFIG_DIR}/janus.jcfg" ]]; then
     cp "${JANUS_CONFIG_DIR}/janus.jcfg" "${main_cfg}"
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*stun_server[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*stun_server[[:space:]]*=.*$/\tstun_server = \"${JANUS_STUN_SERVER//\//\\/}\"/" "${main_cfg}"
-    fi
-    if grep -Eq '^[[:space:]]*#?[[:space:]]*stun_port[[:space:]]*=' "${main_cfg}"; then
-      sed -i "s/^[[:space:]]*#\\?[[:space:]]*stun_port[[:space:]]*=.*$/\tstun_port = ${JANUS_STUN_PORT}/" "${main_cfg}"
-    fi
+    sed -i \
+      -e 's/^[[:space:]]*stun_server[[:space:]]*=.*$/# stun_server disabled by webbot-media.sh/' \
+      -e 's/^[[:space:]]*stun_port[[:space:]]*=.*$/# stun_port disabled by webbot-media.sh/' \
+      "${main_cfg}"
   fi
 
   if [[ -f "${JANUS_CONFIG_DIR}/janus.transport.http.jcfg" ]]; then
