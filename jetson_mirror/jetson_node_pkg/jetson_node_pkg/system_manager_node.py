@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import math
 import os
 import signal
 import shlex
@@ -17,8 +18,9 @@ from jetson_interfaces.srv import StartNav
 from std_msgs.msg import String
 
 try:
-    from geometry_msgs.msg import Twist
+    from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
 except ImportError:
+    PoseWithCovarianceStamped = None
     Twist = None
 
 try:
@@ -136,6 +138,7 @@ class SystemManager(Node):
         self.declare_parameter('slam_params_file', '/home/nvidia/ros2_ws/my_slam.yaml')
         self.declare_parameter('cmd_vel_timeout_sec', 0.5)
         self.declare_parameter('cmd_vel_stop_period_sec', 0.2)
+        self.declare_parameter('fixed_initial_pose_delay_sec', 13.0)
         self.declare_parameter('server_url', 'http://182.43.86.126:4001')
         self.declare_parameter('cleanup_script', '/home/nvidia/webbot-cleanup-ros.sh')
 
@@ -150,6 +153,7 @@ class SystemManager(Node):
         self.cleanup_script = self.get_parameter('cleanup_script').value
         self.cmd_vel_timeout_sec = float(self.get_parameter('cmd_vel_timeout_sec').value)
         self.cmd_vel_stop_period_sec = float(self.get_parameter('cmd_vel_stop_period_sec').value)
+        self.fixed_initial_pose_delay_sec = float(self.get_parameter('fixed_initial_pose_delay_sec').value)
         self.nav_motion_watchdog_active = False
         self.nav_motion_stance = 'crouch'
         self.nav_motion_last_cmd_time = None
@@ -161,10 +165,17 @@ class SystemManager(Node):
         self.get_logger().info(f'Server URL: {self.server_url}')
 
         self.motion_cmd_pub = None
+        self.initial_pose_pub = None
         if MotionCtrl is not None:
             self.motion_cmd_pub = self.create_publisher(MotionCtrl, '/diablo/MotionCmd', 10)
         else:
             self.get_logger().warn('motion_msgs.msg.MotionCtrl is unavailable; stop_all will not publish an explicit stop command')
+
+        if PoseWithCovarianceStamped is not None:
+            self.initial_pose_pub = self.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
+            self.create_subscription(String, '/system/fixed_initialpose', self.handle_fixed_initial_pose, 10)
+        else:
+            self.get_logger().warn('geometry_msgs.msg.PoseWithCovarianceStamped is unavailable; fixed initial pose is disabled')
 
         self.cmd_vel_pub = None
         if Twist is not None:
@@ -193,6 +204,121 @@ class SystemManager(Node):
         self.publish_map_list()
 
         self.get_logger().info('System Manager is ready.')
+
+    def get_fixed_initial_pose_path(self, map_yaml_file):
+        root, _ = os.path.splitext(os.path.abspath(map_yaml_file))
+        return f'{root}.initialpose.json'
+
+    def handle_fixed_initial_pose(self, msg):
+        try:
+            payload = json.loads(msg.data or '{}')
+            map_yaml_file = str(payload.get('mapYamlFile') or payload.get('map_yaml_file') or '').strip()
+            x = float(payload.get('x'))
+            y = float(payload.get('y'))
+            theta = float(payload.get('theta', 0.0))
+
+            if not map_yaml_file:
+                self.get_logger().warn('Ignored fixed initial pose without mapYamlFile')
+                return
+            if not os.path.exists(map_yaml_file):
+                self.get_logger().warn(f'Ignored fixed initial pose for missing map: {map_yaml_file}')
+                return
+            if not all(math.isfinite(value) for value in (x, y, theta)):
+                self.get_logger().warn(f'Ignored fixed initial pose with invalid values: {payload}')
+                return
+
+            pose_file = self.get_fixed_initial_pose_path(map_yaml_file)
+            record = {
+                'map_yaml_file': os.path.abspath(map_yaml_file),
+                'frame_id': 'map',
+                'x': x,
+                'y': y,
+                'theta': theta,
+                'saved_at': datetime.now(timezone.utc).isoformat(),
+            }
+
+            tmp_file = f'{pose_file}.tmp'
+            with open(tmp_file, 'w', encoding='utf-8') as file:
+                json.dump(record, file, ensure_ascii=True, indent=2)
+                file.write('\n')
+            os.replace(tmp_file, pose_file)
+            self.get_logger().info(f'Saved fixed initial pose for {map_yaml_file}: x={x:.3f}, y={y:.3f}, theta={theta:.3f}')
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to save fixed initial pose: {exc}')
+
+    def load_fixed_initial_pose(self, map_yaml_file):
+        pose_file = self.get_fixed_initial_pose_path(map_yaml_file)
+        if not os.path.exists(pose_file):
+            return None
+
+        try:
+            with open(pose_file, 'r', encoding='utf-8') as file:
+                payload = json.load(file)
+
+            x = float(payload.get('x'))
+            y = float(payload.get('y'))
+            theta = float(payload.get('theta', 0.0))
+            if not all(math.isfinite(value) for value in (x, y, theta)):
+                raise ValueError(f'invalid pose values: {payload}')
+
+            return {'x': x, 'y': y, 'theta': theta}
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to load fixed initial pose {pose_file}: {exc}')
+            return None
+
+    def schedule_fixed_initial_pose_publish(self, map_yaml_file, nav_pid):
+        pose = self.load_fixed_initial_pose(map_yaml_file)
+        if pose is None:
+            self.get_logger().info(f'No fixed initial pose for map: {map_yaml_file}')
+            return
+
+        thread = threading.Thread(
+            target=self.publish_fixed_initial_pose_after_nav_ready,
+            args=(map_yaml_file, pose, nav_pid),
+            daemon=True,
+        )
+        thread.start()
+
+    def publish_fixed_initial_pose_after_nav_ready(self, map_yaml_file, pose, nav_pid):
+        time.sleep(max(0.0, self.fixed_initial_pose_delay_sec))
+
+        if self.current_process is None or self.current_process.pid != nav_pid or self.current_process.poll() is not None:
+            self.get_logger().info(f'Skipped fixed initial pose publish because navigation is no longer running: {map_yaml_file}')
+            return
+
+        for index in range(8):
+            if self.current_process is None or self.current_process.pid != nav_pid or self.current_process.poll() is not None:
+                return
+            self.publish_initial_pose(pose['x'], pose['y'], pose['theta'])
+            if index < 7:
+                time.sleep(0.5)
+
+        self.get_logger().info(
+            f'Published fixed initial pose for {map_yaml_file}: x={pose["x"]:.3f}, y={pose["y"]:.3f}, theta={pose["theta"]:.3f}'
+        )
+
+    def publish_initial_pose(self, x, y, theta):
+        if self.initial_pose_pub is None or PoseWithCovarianceStamped is None:
+            return
+
+        msg = PoseWithCovarianceStamped()
+        msg.header.frame_id = 'map'
+        msg.pose.pose.position.x = float(x)
+        msg.pose.pose.position.y = float(y)
+        msg.pose.pose.position.z = 0.0
+        msg.pose.pose.orientation.x = 0.0
+        msg.pose.pose.orientation.y = 0.0
+        msg.pose.pose.orientation.z = math.sin(float(theta) / 2.0)
+        msg.pose.pose.orientation.w = math.cos(float(theta) / 2.0)
+        msg.pose.covariance = [
+            0.25, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.25, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0685389192,
+        ]
+        self.initial_pose_pub.publish(msg)
 
     def cleanup_residual_processes(self):
         cleanup_script = str(self.cleanup_script or '').strip()
@@ -448,6 +574,7 @@ class SystemManager(Node):
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'navigation'
             self.enable_nav_motion_watchdog(stance)
+            self.schedule_fixed_initial_pose_publish(map_yaml_file, self.current_process.pid)
 
             self.get_logger().info(f'Started Navigation with PID: {self.current_process.pid}, stance: {stance}, speed: {speed}')
             response.success = True

@@ -20,6 +20,7 @@ interface MapCanvasProps {
   pathResetToken?: number;
   onGoalPoseSelected?: (pose: NavigationPose) => void;
   onWaypointAdded?: (pose: NavigationPose) => void;
+  onInitialPoseSelected?: (pose: NavigationPose) => void;
 }
 
 interface ViewState {
@@ -51,6 +52,7 @@ export function MapCanvas({
   pathResetToken = 0,
   onGoalPoseSelected,
   onWaypointAdded,
+  onInitialPoseSelected,
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapLayerRef = useRef<HTMLCanvasElement>(null);
@@ -666,6 +668,7 @@ export function MapCanvas({
           } else if (navClickMode === 'waypoint') {
             onWaypointAdded?.(createPose(startWorldX, startWorldY, theta));
           } else if (navClickMode === 'initial_pose') {
+            onInitialPoseSelected?.(createPose(startWorldX, startWorldY, theta));
             publishInitialPose(startWorldX, startWorldY, theta);
           }
 
@@ -708,6 +711,7 @@ export function MapCanvas({
       mode,
       navClickMode,
       onGoalPoseSelected,
+      onInitialPoseSelected,
       onWaypointAdded,
       publishGoal,
       publishInitialPose,

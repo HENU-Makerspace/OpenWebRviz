@@ -11,6 +11,13 @@ export interface NavPath {
   timestamp: number;
 }
 
+export interface InitialPoseFix {
+  mapYamlFile: string;
+  x: number;
+  y: number;
+  theta: number;
+}
+
 export function useRosPath(
   ros: ROSLIB.Ros | null,
   globalPlanTopic: string = '/plan',
@@ -213,4 +220,40 @@ export function useInitialPosePublisher(
   };
 
   return { publishInitialPose };
+}
+
+export function useFixedInitialPosePublisher(
+  ros: ROSLIB.Ros | null,
+  topic: string = '/system/fixed_initialpose'
+) {
+  const fixedPosePubRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!ros) return;
+
+    fixedPosePubRef.current = new ROSLIB.Topic({
+      ros,
+      name: topic,
+      messageType: 'std_msgs/msg/String',
+    });
+
+    return () => {
+      if (fixedPosePubRef.current) {
+        fixedPosePubRef.current.unadvertise();
+        fixedPosePubRef.current = null;
+      }
+    };
+  }, [ros, topic]);
+
+  const publishFixedInitialPose = (pose: InitialPoseFix) => {
+    if (!fixedPosePubRef.current) return false;
+
+    fixedPosePubRef.current.publish({
+      data: JSON.stringify(pose),
+    });
+    console.log('[useFixedInitialPosePublisher] Saved fixed initial pose:', pose);
+    return true;
+  };
+
+  return { publishFixedInitialPose };
 }

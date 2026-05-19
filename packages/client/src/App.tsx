@@ -29,6 +29,7 @@ import { ModeProvider, useMode } from './hooks/useMode';
 import { useSlamControl, useMapManager } from './hooks/useSlamControl';
 import { useFaceRecognition } from './hooks/useFaceRecognition';
 import { useNavigationTasks } from './hooks/useNavigationTasks';
+import { useFixedInitialPosePublisher } from './hooks/useRosPath';
 import { useSystemManager } from './hooks/useSystemManager';
 import type { NavigationPose, NavigationTaskMode, NavigationTaskStatus } from './hooks/useNavigationTasks';
 import backgroundImage from '../../../img/background.png';
@@ -344,6 +345,7 @@ interface NavigationPanelProps {
   onCancelTask: () => void;
   taskStatus: NavigationTaskStatus;
   taskRunning: boolean;
+  fixedInitialPose: NavigationPose | null;
 }
 
 type Stance = 'stand' | 'crouch';
@@ -363,6 +365,7 @@ function NavigationPanel({
   onCancelTask,
   taskStatus,
   taskRunning,
+  fixedInitialPose,
   ros,
   isConnected,
 }: NavigationPanelProps & { ros: any; isConnected: boolean }) {
@@ -371,8 +374,11 @@ function NavigationPanel({
   const [stopping, setStopping] = useState(false);
   const [stance, setStance] = useState<Stance>('crouch');
   const [speed, setSpeed] = useState<Speed>('high');
+  const [fixedPoseSaving, setFixedPoseSaving] = useState(false);
+  const [fixedPoseSaved, setFixedPoseSaved] = useState(false);
 
   const { status: robotStatus, startNavigation: startNav, stopAll } = useSystemManager(ros, isConnected);
+  const { publishFixedInitialPose } = useFixedInitialPosePublisher(ros);
 
   const isNavRunning = robotStatus.mode === 'navigation';
 
@@ -404,6 +410,30 @@ function NavigationPanel({
       await stopAll();
     } finally {
       setStopping(false);
+    }
+  };
+
+  const saveFixedInitialPose = async () => {
+    if (!selectedMap || !fixedInitialPose || fixedPoseSaving) {
+      return;
+    }
+
+    setFixedPoseSaving(true);
+    setFixedPoseSaved(false);
+    try {
+      const mapYamlPath = `/home/nvidia/maps/${selectedMap}.yaml`;
+      const published = publishFixedInitialPose({
+        mapYamlFile: mapYamlPath,
+        x: fixedInitialPose.x,
+        y: fixedInitialPose.y,
+        theta: fixedInitialPose.theta,
+      });
+      if (published) {
+        setFixedPoseSaved(true);
+        window.setTimeout(() => setFixedPoseSaved(false), 2500);
+      }
+    } finally {
+      window.setTimeout(() => setFixedPoseSaving(false), 250);
     }
   };
 
@@ -616,6 +646,20 @@ function NavigationPanel({
             )}
           </div>
 
+          <button
+            onClick={() => void saveFixedInitialPose()}
+            disabled={!selectedMap || !fixedInitialPose || fixedPoseSaving}
+            className="w-full rounded border border-cyan-300/30 bg-cyan-500/18 px-2 py-1.5 text-xs text-cyan-100 transition hover:bg-cyan-500/28 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {fixedPoseSaving
+              ? '保存中...'
+              : fixedPoseSaved
+                ? '已固定初始位姿'
+                : fixedInitialPose
+                  ? '固定为此地图初始位姿'
+                  : '先设置初始位姿'}
+          </button>
+
           {taskMode !== 'single' && (
             <div className="space-y-2 rounded border border-slate-200 bg-slate-50 p-2">
               <div className="flex items-center justify-between">
@@ -746,6 +790,7 @@ function AppContent() {
   const [mapSelectionResetToken, setMapSelectionResetToken] = useState(0);
   const [navigationTaskMode, setNavigationTaskMode] = useState<NavigationTaskMode>('single');
   const [patrolPoints, setPatrolPoints] = useState<NavigationPose[]>([]);
+  const [fixedInitialPose, setFixedInitialPose] = useState<NavigationPose | null>(null);
   const navigationTasks = useNavigationTasks(ros, isConnected, config?.navigation || null);
 
   const teleop = useKeyboardTeleop(ros, {
@@ -791,6 +836,7 @@ function AppContent() {
 
     previousSelectedMapRef.current = selectedMap;
     setPatrolPoints([]);
+    setFixedInitialPose(null);
     setNavClickMode('none');
     setMapSelectionResetToken((value) => value + 1);
     navigationTasks.cancelCurrentTask();
@@ -906,7 +952,7 @@ function AppContent() {
               {displayMode === 'teleop' ? (
                 <MappingPanel ros={ros} isConnected={isConnected} />
               ) : (
-                <NavigationPanel navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} setSelectedMap={setSelectedMap} taskMode={navigationTaskMode} setTaskMode={setNavigationTaskMode} patrolPoints={patrolPoints} onRemovePatrolPoint={removePatrolPoint} onClearPatrolPoints={clearPatrolPoints} onStartPatrolTask={startPatrolTask} onCancelTask={navigationTasks.cancelCurrentTask} taskStatus={navigationTasks.status} taskRunning={navigationTasks.isRunning} ros={ros} isConnected={isConnected} />
+                <NavigationPanel navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} setSelectedMap={setSelectedMap} taskMode={navigationTaskMode} setTaskMode={setNavigationTaskMode} patrolPoints={patrolPoints} onRemovePatrolPoint={removePatrolPoint} onClearPatrolPoints={clearPatrolPoints} onStartPatrolTask={startPatrolTask} onCancelTask={navigationTasks.cancelCurrentTask} taskStatus={navigationTasks.status} taskRunning={navigationTasks.isRunning} fixedInitialPose={fixedInitialPose} ros={ros} isConnected={isConnected} />
               )}
             </TechPanel>
             <TechPanel title="系统设置" bodyClassName="p-3">
@@ -939,7 +985,7 @@ function AppContent() {
               {showDebug && <DebugPanel />}
               {rightViewport === 'camera' ? (
                 <div className="relative z-10 h-full overflow-hidden rounded-lg bg-slate-950/26">
-                  <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} />
+                  <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} onInitialPoseSelected={setFixedInitialPose} />
                   <div className="absolute left-5 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2"><MapToolButton icon={ZoomIn} /><MapToolButton icon={ZoomOut} /><MapToolButton icon={Maximize2} /><MapToolButton icon={LocateFixed} /><MapToolButton icon={Route} active={navClickMode !== 'none'} /></div>
                   <div className="absolute bottom-5 left-5 z-20 rounded-lg border border-cyan-300/38 bg-slate-950/52 px-4 py-3 text-xs text-slate-200 backdrop-blur-[3px]"><div className="flex items-center gap-2"><Info className="h-4 w-4 text-cyan-300" /><span>{guidanceText}</span></div></div>
                 </div>
