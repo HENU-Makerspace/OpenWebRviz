@@ -4,6 +4,7 @@ import os
 import signal
 import shlex
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -135,6 +136,9 @@ class SystemManager(Node):
         self.declare_parameter('slam_params_file', '/home/nvidia/ros2_ws/my_slam.yaml')
         self.declare_parameter('cmd_vel_timeout_sec', 0.5)
         self.declare_parameter('cmd_vel_stop_period_sec', 0.2)
+        self.declare_parameter('auto_localize_spin_sec', 8.0)
+        self.declare_parameter('auto_localize_angular_speed', 0.35)
+        self.declare_parameter('auto_localize_delay_sec', 12.0)
         self.declare_parameter('server_url', 'http://182.43.86.126:4001')
         self.declare_parameter('cleanup_script', '/home/nvidia/webbot-cleanup-ros.sh')
 
@@ -149,11 +153,15 @@ class SystemManager(Node):
         self.cleanup_script = self.get_parameter('cleanup_script').value
         self.cmd_vel_timeout_sec = float(self.get_parameter('cmd_vel_timeout_sec').value)
         self.cmd_vel_stop_period_sec = float(self.get_parameter('cmd_vel_stop_period_sec').value)
+        self.auto_localize_spin_sec = float(self.get_parameter('auto_localize_spin_sec').value)
+        self.auto_localize_angular_speed = float(self.get_parameter('auto_localize_angular_speed').value)
+        self.auto_localize_delay_sec = float(self.get_parameter('auto_localize_delay_sec').value)
 
         self.nav_motion_watchdog_active = False
         self.nav_motion_stance = 'crouch'
         self.nav_motion_last_cmd_time = None
         self.nav_motion_last_stop_time = 0.0
+        self.auto_localize_generation = 0
         self.map_list_topic = '/system/map_list'
 
         # Use hardcoded server URL from parameter
@@ -334,6 +342,67 @@ class SystemManager(Node):
         except Exception as exc:
             self.get_logger().warn(f'Failed to publish zero cmd_vel: {exc}')
 
+    def start_auto_localization(self):
+        self.auto_localize_generation += 1
+        generation = self.auto_localize_generation
+        thread = threading.Thread(
+            target=self.run_auto_localization,
+            args=(generation,),
+            daemon=True,
+        )
+        thread.start()
+
+    def run_auto_localization(self, generation):
+        if Twist is None or self.cmd_vel_pub is None:
+            self.get_logger().warn('Auto localization skipped: cmd_vel publisher is unavailable')
+            return
+
+        time.sleep(max(0.0, self.auto_localize_delay_sec))
+        if generation != self.auto_localize_generation:
+            return
+        if self.current_process is None or self.current_process.poll() is not None:
+            return
+        if self.process_name != 'navigation':
+            return
+
+        try:
+            subprocess.run(
+                self.build_ros_command([
+                    'ros2',
+                    'service',
+                    'call',
+                    '/reinitialize_global_localization',
+                    'std_srvs/srv/Empty',
+                    '{}',
+                ]),
+                capture_output=True,
+                timeout=5,
+            )
+            self.get_logger().info('Requested AMCL global localization reinitialization')
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to request AMCL global localization: {exc}')
+
+        self.get_logger().info(
+            f'Auto localization spin started: duration={self.auto_localize_spin_sec:.1f}s, '
+            f'angular_speed={self.auto_localize_angular_speed:.2f}rad/s'
+        )
+        deadline = time.monotonic() + max(0.0, self.auto_localize_spin_sec)
+        twist = Twist()
+        twist.angular.z = self.auto_localize_angular_speed
+        while time.monotonic() < deadline:
+            if generation != self.auto_localize_generation:
+                break
+            if self.current_process is None or self.current_process.poll() is not None:
+                break
+            if self.process_name != 'navigation':
+                break
+            self.cmd_vel_pub.publish(twist)
+            time.sleep(0.1)
+
+        self.publish_zero_cmd_vel()
+        self.nav_motion_last_cmd_time = time.monotonic()
+        self.get_logger().info('Auto localization spin finished')
+
     def publish_stop_motion(self, stance='crouch', repeat=3):
         if self.motion_cmd_pub is None or MotionCtrl is None:
             return
@@ -448,6 +517,7 @@ class SystemManager(Node):
             self.current_process = subprocess.Popen(cmd, start_new_session=True)
             self.process_name = 'navigation'
             self.enable_nav_motion_watchdog(stance)
+            self.start_auto_localization()
 
             self.get_logger().info(f'Started Navigation with PID: {self.current_process.pid}, stance: {stance}, speed: {speed}')
             response.success = True

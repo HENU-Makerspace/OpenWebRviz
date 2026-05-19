@@ -196,7 +196,7 @@ local_costmap:
         z_voxels: 16
         max_obstacle_height: 2.0
         mark_threshold: 0
-        observation_sources: scan camera 
+        observation_sources: scan
         scan:
           topic: /scan
           min_obstacle_height: -0.1 # <--- 【站立修改】过滤掉传感器误差产生的极低地面点
@@ -208,15 +208,6 @@ local_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 7.0   # 【修改】增大障碍物检测距离
           obstacle_min_range: 0.0
-        camera:
-          topic: /camera/camera/depth/color/points
-          max_obstacle_height: 1.5
-          min_obstacle_height: -0.1 # <--- 相机同样过滤掉太低的点
-          obstacle_max_range: 3.0   # 【修改】增大相机检测距离
-          obstacle_min_range: 0.2
-          clearing: True
-          marking: True
-          data_type: "PointCloud2"
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True

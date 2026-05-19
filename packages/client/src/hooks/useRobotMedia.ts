@@ -211,6 +211,7 @@ export function useRobotMedia(config: MediaConfig | null) {
   const [videoConnected, setVideoConnected] = useState(false);
   const [audioConnected, setAudioConnected] = useState(false);
   const [talkbackActive, setTalkbackActive] = useState(false);
+  const [microphoneGain, setMicrophoneGainState] = useState(1.0);
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -224,6 +225,10 @@ export function useRobotMedia(config: MediaConfig | null) {
   const remoteVideoStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioStreamRef = useRef<MediaStream | null>(null);
   const localTalkbackStreamRef = useRef<MediaStream | null>(null);
+  const rawTalkbackStreamRef = useRef<MediaStream | null>(null);
+  const gainedTalkbackStreamRef = useRef<MediaStream | null>(null);
+  const talkbackAudioContextRef = useRef<AudioContext | null>(null);
+  const talkbackGainNodeRef = useRef<GainNode | null>(null);
   const talkbackJoinedRef = useRef(false);
 
   const clearMediaElement = useCallback((element: HTMLMediaElement | null) => {
@@ -253,6 +258,14 @@ export function useRobotMedia(config: MediaConfig | null) {
 
   const stopTracks = useCallback((stream: MediaStream | null) => {
     stream?.getTracks().forEach((track) => track.stop());
+  }, []);
+
+  const setMicrophoneGain = useCallback((nextGain: number) => {
+    const clampedGain = Math.max(0, Math.min(3, nextGain));
+    setMicrophoneGainState(clampedGain);
+    if (talkbackGainNodeRef.current) {
+      talkbackGainNodeRef.current.gain.value = clampedGain;
+    }
   }, []);
 
   const destroySessionIfIdle = useCallback(() => {
@@ -454,7 +467,16 @@ export function useRobotMedia(config: MediaConfig | null) {
     }
 
     stopTracks(localTalkbackStreamRef.current);
+    stopTracks(rawTalkbackStreamRef.current);
+    stopTracks(gainedTalkbackStreamRef.current);
     localTalkbackStreamRef.current = null;
+    rawTalkbackStreamRef.current = null;
+    gainedTalkbackStreamRef.current = null;
+    talkbackGainNodeRef.current = null;
+    if (talkbackAudioContextRef.current) {
+      void talkbackAudioContextRef.current.close();
+      talkbackAudioContextRef.current = null;
+    }
     talkbackJoinedRef.current = false;
     setTalkbackActive(false);
     destroySessionIfIdle();
@@ -656,14 +678,33 @@ export function useRobotMedia(config: MediaConfig | null) {
     try {
       await stopTalkback();
       const microphoneStream = await requestMicrophoneStream();
-      const microphoneTrack = microphoneStream.getAudioTracks()[0];
+      rawTalkbackStreamRef.current = microphoneStream;
+
+      const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextCtor) {
+        throw new Error('当前浏览器不支持麦克风增益控制。');
+      }
+
+      const audioContext = new AudioContextCtor();
+      const source = audioContext.createMediaStreamSource(microphoneStream);
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = microphoneGain;
+      const destination = audioContext.createMediaStreamDestination();
+      source.connect(gainNode);
+      gainNode.connect(destination);
+
+      talkbackAudioContextRef.current = audioContext;
+      talkbackGainNodeRef.current = gainNode;
+
+      const microphoneTrack = destination.stream.getAudioTracks()[0];
 
       if (!microphoneTrack) {
         stopTracks(microphoneStream);
         throw new Error('浏览器没有返回可用的麦克风音轨，请检查麦克风权限和输入设备。');
       }
 
-      localTalkbackStreamRef.current = microphoneStream;
+      gainedTalkbackStreamRef.current = destination.stream;
+      localTalkbackStreamRef.current = destination.stream;
       const status = await refreshStatus();
       if (status && !status.janus) {
         throw new Error('Janus is unavailable. Please make sure Janus and the Jetson media pipelines are already running.');
@@ -740,6 +781,7 @@ export function useRobotMedia(config: MediaConfig | null) {
     attachPlugin,
     config,
     pluginMessage,
+    microphoneGain,
     refreshStatus,
     requestJson,
     stopTracks,
@@ -790,8 +832,10 @@ export function useRobotMedia(config: MediaConfig | null) {
     videoConnected,
     audioConnected,
     talkbackActive,
+    microphoneGain,
     loadingAction,
     error,
+    setMicrophoneGain,
     refreshStatus,
     startVideo,
     stopVideo,

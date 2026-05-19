@@ -8,6 +8,7 @@ interface MediaViewportProps {
   videoConnected: boolean;
   audioMonitoring: boolean;
   talkbackActive: boolean;
+  microphoneGain: number;
   loadingAction: string | null;
   error: string | null;
   faceSnapshot: FaceSnapshot;
@@ -15,6 +16,7 @@ interface MediaViewportProps {
   onToggleVideo: () => void;
   onToggleAudio: () => void;
   onToggleTalkback: () => void;
+  onMicrophoneGainChange: (gain: number) => void;
 }
 
 export function MediaViewport({
@@ -23,6 +25,7 @@ export function MediaViewport({
   videoConnected,
   audioMonitoring,
   talkbackActive,
+  microphoneGain,
   loadingAction,
   error,
   faceSnapshot,
@@ -30,6 +33,7 @@ export function MediaViewport({
   onToggleVideo,
   onToggleAudio,
   onToggleTalkback,
+  onMicrophoneGainChange,
 }: MediaViewportProps) {
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0, sourceWidth: 0, sourceHeight: 0 });
   const busy = loadingAction !== null;
@@ -172,6 +176,23 @@ export function MediaViewport({
         >
           {loadingAction === 'talkback' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
         </button>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        <div className="mb-1 flex items-center justify-between gap-3">
+          <span>麦克风</span>
+          <span className="font-mono">{Math.round(microphoneGain * 100)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="300"
+          step="5"
+          value={Math.round(microphoneGain * 100)}
+          onChange={(event) => onMicrophoneGainChange(Number(event.target.value) / 100)}
+          aria-label="麦克风音量"
+          className="h-2 w-full cursor-pointer accent-amber-500"
+        />
       </div>
 
       {error && (
