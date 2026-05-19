@@ -158,10 +158,11 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
     const flushLatest = () => {
       rafRef.current = null;
 
+      const baseFootprintPose = resolvePoseInMap('base_footprint');
       const baseLinkPose = resolvePoseInMap('base_link');
       const bodyPose = resolvePoseInMap('body');
       const cameraInitPose = resolvePoseInMap('camera_init');
-      const nextPose = baseLinkPose || bodyPose || cameraInitPose;
+      const nextPose = baseFootprintPose || baseLinkPose || bodyPose || cameraInitPose;
 
       latestRobotPoseRef.current = nextPose;
       setRobotPose(nextPose);

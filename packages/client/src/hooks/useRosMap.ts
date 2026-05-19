@@ -26,6 +26,10 @@ export interface RobotPose {
   frameId: string;
 }
 
+function getMapCacheKey(mapTopic: string) {
+  return `webbot-map-cache:${mapTopic}`;
+}
+
 export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/map', paused: boolean = false) {
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
@@ -34,12 +38,28 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
   const rafRef = useRef<number | null>(null);
   const latestMapRef = useRef<MapData | null>(null);
 
+  useEffect(() => {
+    if (!mapTopic || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      const cached = window.localStorage.getItem(getMapCacheKey(mapTopic));
+      if (!cached) {
+        return;
+      }
+
+      const parsed = JSON.parse(cached) as MapData;
+      setMapData(parsed);
+      setIsMapLoaded(true);
+    } catch (error) {
+      console.error('[useRosMap] Failed to restore cached map:', error);
+    }
+  }, [mapTopic]);
+
   // Subscribe to map
   useEffect(() => {
-    // If no topic specified (navigation mode with static map), don't subscribe
     if (!ros || !mapTopic || paused) {
-      setMapData(null);
-      setIsMapLoaded(false);
       return;
     }
 
@@ -54,6 +74,16 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
       if (latestMapRef.current) {
         setMapData(latestMapRef.current);
         setIsMapLoaded(true);
+        if (typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              getMapCacheKey(mapTopic),
+              JSON.stringify(latestMapRef.current)
+            );
+          } catch (error) {
+            console.error('[useRosMap] Failed to cache map:', error);
+          }
+        }
       }
     };
 
@@ -75,8 +105,6 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
         rafRef.current = null;
       }
       mapSub.unsubscribe();
-      setMapData(null);
-      setIsMapLoaded(false);
     };
   }, [ros, mapTopic, paused]);
 
