@@ -84,12 +84,4 @@ def generate_launch_description():
             ]
         ),
 
-        # 6. 启动 MQTT
-        Node(
-            package='mqtt_client',
-            executable='mqtt_client',
-            name='mqtt_client',
-            output='screen',
-            parameters=['/home/nvidia/ros2_ws/src/mqtt_client/mqtt_client/config/params.yaml']
-        )
     ])

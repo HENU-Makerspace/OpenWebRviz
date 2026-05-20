@@ -19,6 +19,9 @@
     "ops:status": "bun run ops:status:local",
     "ops:status:local": "ROBOT_CONFIG_PROFILE=local bun run tools/ops-status.ts",
     "ops:status:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run tools/ops-status.ts",
+    "ops:nav-load": "bun run ops:nav-load:local",
+    "ops:nav-load:local": "ROBOT_CONFIG_PROFILE=local bun run tools/nav-load.ts",
+    "ops:nav-load:cloud": "ROBOT_CONFIG_PROFILE=cloud bun run tools/nav-load.ts",
     "db:generate": "bun run --filter server db:generate",
     "db:push": "bun run --filter server db:push"
   },

@@ -3,6 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -42,6 +43,7 @@ def generate_launch_description():
 
     map_yaml_file = LaunchConfiguration('map', default='/home/nvidia/ros2_ws/my_map.yaml')
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
+    start_livox = LaunchConfiguration('start_livox', default='false')
     pointcloud_target_frame = LaunchConfiguration('pointcloud_target_frame', default='base_footprint')
 
     speed_params = {
@@ -55,12 +57,14 @@ def generate_launch_description():
         DeclareLaunchArgument('map', default_value='/home/nvidia/ros2_ws/my_map.yaml'),
         DeclareLaunchArgument('speed', default_value='high', description='Speed: high, medium, low'),
         DeclareLaunchArgument('params_file', default_value=''),
+        DeclareLaunchArgument('start_livox', default_value='false'),
         DeclareLaunchArgument('pointcloud_target_frame', default_value='base_footprint'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(livox_driver_dir, 'launch_ROS2', 'msg_MID360_launch.py')
             ),
             launch_arguments={'use_sim_time': use_sim_time}.items(),
+            condition=IfCondition(start_livox),
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
@@ -170,12 +174,5 @@ def generate_launch_description():
                     )
                 ),
             ],
-        ),
-        Node(
-            package='mqtt_client',
-            executable='mqtt_client',
-            name='mqtt_client',
-            output='screen',
-            parameters=['/home/nvidia/ros2_ws/src/mqtt_client/mqtt_client/config/params.yaml'],
         ),
     ])

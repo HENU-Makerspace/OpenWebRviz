@@ -64,16 +64,7 @@ def generate_launch_description():
             }]
         ),
 
-        # 5. 通讯层：启动 MQTT 桥接器
-        Node(
-            package='mqtt_client',
-            executable='mqtt_client',
-            name='mqtt_client',
-            output='screen',
-            parameters=['/home/nvidia/ros2_ws/src/mqtt_client/mqtt_client/config/params.yaml']
-        ),
-
-        # 6. 动作层：启动 cmd_vel 转换器（确保机器人姿态动作正确，比如先趴下）
+        # 5. 动作层：启动 cmd_vel 转换器（确保机器人姿态动作正确，比如先趴下）
         Node(
             package='jetson_node_pkg',
             executable='cmd_vel_converter',
@@ -81,7 +72,7 @@ def generate_launch_description():
             output='screen'
         ),
 
-        # 7. 导航层：延迟 10 秒启动纯净版导航栈 (切除 AMCL 和 MapServer)
+        # 6. 导航层：延迟 10 秒启动纯净版导航栈 (切除 AMCL 和 MapServer)
         TimerAction(
             period=10.0,
             actions=[

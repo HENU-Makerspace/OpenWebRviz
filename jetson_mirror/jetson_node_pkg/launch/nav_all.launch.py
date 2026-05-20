@@ -164,13 +164,6 @@ def generate_launch_description():
             }],
         ),
         Node(
-            package='mqtt_client',
-            executable='mqtt_client',
-            name='mqtt_client',
-            output='screen',
-            parameters=['/home/nvidia/ros2_ws/src/mqtt_client/mqtt_client/config/params.yaml'],
-        ),
-        Node(
             package='jetson_node_pkg',
             executable='cmd_vel_converter',
             name='cmd_vel_converter',
