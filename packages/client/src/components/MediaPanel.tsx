@@ -36,11 +36,22 @@ export function MediaPanel({ media }: MediaPanelProps) {
           <StatusBadge label="Janus" active={media.serviceStatus.janus} />
           <StatusBadge label="Video Service" active={media.serviceStatus.video?.active === true} />
           <StatusBadge label="RTP Forward" active={media.talkbackForwardActive} />
+          <StatusBadge label="Talkback User" active={media.serviceStatus.talkbackForward.hasParticipants === true} />
+          <StatusBadge label="Audio Playback" active={media.serviceStatus.audio?.playback?.process?.active === true} />
+          <StatusBadge label="UDP 5006" active={media.serviceStatus.audio?.playback?.port?.listening === true} />
         </div>
 
         {media.serviceStatus.video && (
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             摄像头设备：{media.serviceStatus.video.deviceExists ? '已检测到' : '未检测到'}，当前帧数缓存：{media.serviceStatus.video.frameCount ?? 0}
+          </div>
+        )}
+
+        {media.serviceStatus.audio && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            对讲参与者：{media.serviceStatus.talkbackForward.participantCount ?? 0}，
+            播放进程：{media.serviceStatus.audio.playback.process.active ? '运行中' : '未运行'}，
+            5006：{media.serviceStatus.audio.playback.port.listening ? '监听中' : '未监听'}
           </div>
         )}
 

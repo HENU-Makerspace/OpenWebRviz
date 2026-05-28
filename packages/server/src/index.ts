@@ -50,6 +50,8 @@ function renderMediaControlExecStart(sourceConfig: YamlConfig) {
     '--frame-dir', '%h/.local/state/webbot-media/frames',
     '--video-device', asString(media.video_device, '/dev/video0'),
     '--start-timeout-ms', '12000',
+    '--audio-capture-port', String(asNumber(media.audio_capture_port, 5005)),
+    '--audio-playback-port', String(asNumber(media.audio_playback_port, 5006)),
   ].join(' ');
 }
 
@@ -429,6 +431,21 @@ async function getTalkbackForwarders() {
       forwarder.ip === MEDIA_AUDIO_BRIDGE_FORWARD_HOST &&
       Number(forwarder.port) === Number(MEDIA_AUDIO_BRIDGE_FORWARD_PORT),
     );
+  } catch {
+    return [];
+  }
+}
+
+async function getTalkbackParticipants() {
+  try {
+    const response = await forwardJanusRequest<{
+      participants?: Array<Record<string, unknown>>;
+    }>('janus.plugin.audiobridge', {
+      request: 'listparticipants',
+      room: MEDIA_AUDIO_BRIDGE_ROOM,
+    });
+
+    return response.participants || [];
   } catch {
     return [];
   }
@@ -847,15 +864,26 @@ app.get('/api/media/status', async (c) => {
   try {
     const janus = await isJanusAvailable();
     const forwarders = janus ? await getTalkbackForwarders() : [];
+    const talkbackParticipants = janus ? await getTalkbackParticipants() : [];
     let video: Record<string, unknown> | null = null;
+    let media: Record<string, unknown> | null = null;
+    let audio: Record<string, unknown> | null = null;
 
     try {
-      const response = await requestRemoteJson<{ video?: Record<string, unknown> }>(
+      const response = await requestRemoteJson<{
+        video?: Record<string, unknown>;
+        media?: Record<string, unknown>;
+        audio?: Record<string, unknown>;
+      }>(
         `http://${MEDIA_CONTROL_PROXY_HOST}:${MEDIA_CONTROL_PROXY_PORT}/status`,
       );
       video = response.data?.video || null;
+      media = response.data?.media || null;
+      audio = response.data?.audio || null;
     } catch {
       video = null;
+      media = null;
+      audio = null;
     }
 
     return c.json({
@@ -863,7 +891,11 @@ app.get('/api/media/status', async (c) => {
       talkbackForward: {
         active: forwarders.length > 0,
         streamId: forwarders[0]?.stream_id ?? null,
+        participantCount: talkbackParticipants.length,
+        hasParticipants: talkbackParticipants.length > 0,
       },
+      media,
+      audio,
       video,
     });
   } catch (error) {

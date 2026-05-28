@@ -66,6 +66,8 @@ function buildMediaExecStart(settings: RobotSettings) {
     '--frame-dir', '%h/.local/state/webbot-media/frames',
     '--video-device', settings.media.videoDevice,
     '--start-timeout-ms', '12000',
+    '--audio-capture-port', '5005',
+    '--audio-playback-port', '5006',
   ].join(' ');
 }
 

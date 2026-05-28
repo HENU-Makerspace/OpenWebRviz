@@ -381,6 +381,7 @@ class SystemManager(Node):
     def kill_current_process(self):
         # Save process name for fallback kill
         process_name_to_kill = self.process_name
+        had_process = self.current_process is not None
 
         if self.current_process is not None:
             self.get_logger().info(f'Stopping {self.process_name}...')
@@ -406,7 +407,11 @@ class SystemManager(Node):
 
         if process_name_to_kill == 'navigation':
             self.disable_nav_motion_watchdog()
-        self.cleanup_residual_processes()
+
+        # Avoid running the expensive cleanup path on a clean idle start.
+        # Systemd already performs a broader cleanup before the service comes up.
+        if had_process:
+            self.cleanup_residual_processes()
 
     def enable_nav_motion_watchdog(self, stance):
         self.nav_motion_watchdog_active = True

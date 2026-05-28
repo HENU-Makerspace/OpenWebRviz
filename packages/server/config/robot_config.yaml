@@ -8,7 +8,7 @@ server:
   port: 4001
 
 jetson:
-  host: "192.168.43.100"
+  host: "192.168.1.58"
   user: "nvidia"
   maps_dir: "/home/nvidia/maps"
   rosbridge_port: 9090

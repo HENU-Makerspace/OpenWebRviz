@@ -16,15 +16,63 @@ export interface MediaConfig {
 interface MediaServiceStatus {
   janus: boolean;
   video: VideoServiceStatus | null;
+  media: ServiceRuntimeStatus | null;
+  audio: AudioPipelineStatus | null;
+  talkbackForward: TalkbackForwardStatus;
 }
 
 interface MediaStatusResponse {
   janus: boolean;
-  talkbackForward: {
-    active: boolean;
-    streamId: number | null;
-  };
+  talkbackForward: TalkbackForwardStatus;
+  media: ServiceRuntimeStatus | null;
+  audio: AudioPipelineStatus | null;
   video: VideoServiceStatus | null;
+}
+
+interface TalkbackForwardStatus {
+  active: boolean;
+  streamId: number | null;
+  participantCount?: number;
+  hasParticipants?: boolean;
+}
+
+interface ServiceRuntimeStatus {
+  service?: string;
+  active: boolean;
+  activeState?: string;
+  subState?: string;
+  result?: string;
+}
+
+interface ProcessProbeStatus {
+  name?: string;
+  active: boolean;
+  matches?: string[];
+}
+
+interface UdpPortProbeStatus {
+  port: number;
+  listening: boolean;
+  matches?: string[];
+}
+
+interface LogProbeStatus {
+  path?: string;
+  exists: boolean;
+  updatedAt?: string | null;
+  error?: string;
+  lines?: string[];
+}
+
+interface AudioPipelineSideStatus {
+  process: ProcessProbeStatus;
+  port: UdpPortProbeStatus;
+  log: LogProbeStatus;
+}
+
+interface AudioPipelineStatus {
+  capture: AudioPipelineSideStatus;
+  playback: AudioPipelineSideStatus;
 }
 
 interface VideoServiceStatus {
@@ -206,6 +254,14 @@ export function useRobotMedia(config: MediaConfig | null) {
   const [serviceStatus, setServiceStatus] = useState<MediaServiceStatus>({
     janus: false,
     video: null,
+    media: null,
+    audio: null,
+    talkbackForward: {
+      active: false,
+      streamId: null,
+      participantCount: 0,
+      hasParticipants: false,
+    },
   });
   const [talkbackForwardActive, setTalkbackForwardActive] = useState(false);
   const [videoConnected, setVideoConnected] = useState(false);
@@ -308,6 +364,9 @@ export function useRobotMedia(config: MediaConfig | null) {
       setServiceStatus({
         janus: response.janus,
         video: response.video || null,
+        media: response.media || null,
+        audio: response.audio || null,
+        talkbackForward: response.talkbackForward,
       });
       setTalkbackForwardActive(response.talkbackForward.active);
       return response;
@@ -315,6 +374,14 @@ export function useRobotMedia(config: MediaConfig | null) {
       setServiceStatus({
         janus: false,
         video: null,
+        media: null,
+        audio: null,
+        talkbackForward: {
+          active: false,
+          streamId: null,
+          participantCount: 0,
+          hasParticipants: false,
+        },
       });
       setTalkbackForwardActive(false);
       setError(err instanceof Error ? err.message : String(err));
@@ -709,8 +776,8 @@ export function useRobotMedia(config: MediaConfig | null) {
       if (status && !status.janus) {
         throw new Error('Janus is unavailable. Please make sure Janus and the Jetson media pipelines are already running.');
       }
-      await requestJson('/api/media/talkback/forward/start', { method: 'POST' });
-      setTalkbackForwardActive(true);
+      await requestJson('/api/media/talkback/forward/stop', { method: 'POST' });
+      setTalkbackForwardActive(false);
       await refreshStatus();
       await ensureJanusRuntime(config);
 
@@ -724,6 +791,14 @@ export function useRobotMedia(config: MediaConfig | null) {
 
           if (joined && !talkbackJoinedRef.current) {
             talkbackJoinedRef.current = true;
+            void requestJson('/api/media/talkback/forward/start', { method: 'POST' })
+              .then(() => {
+                setTalkbackForwardActive(true);
+                void refreshStatus();
+              })
+              .catch((err) => {
+                setError(`Failed to start talkback forwarder: ${err instanceof Error ? err.message : String(err)}`);
+              });
             handle.createOffer({
               tracks: [
                 { type: 'audio', capture: microphoneTrack, recv: true },

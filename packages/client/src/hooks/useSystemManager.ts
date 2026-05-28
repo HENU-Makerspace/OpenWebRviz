@@ -75,7 +75,7 @@ export function useSystemManager(ros: ROSLIB.Ros | null, isConnected: boolean) {
         resolve(response);
       }, (error: string) => {
         reject(new Error(error));
-      }, 10);
+      }, 20);
     });
   }, [ros, isConnected]);
 

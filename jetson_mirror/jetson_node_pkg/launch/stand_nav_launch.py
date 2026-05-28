@@ -43,7 +43,7 @@ def generate_launch_description():
 
     map_yaml_file = LaunchConfiguration('map', default='/home/nvidia/ros2_ws/my_map.yaml')
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')
-    start_livox = LaunchConfiguration('start_livox', default='false')
+    start_livox = LaunchConfiguration('start_livox', default='true')
     pointcloud_target_frame = LaunchConfiguration('pointcloud_target_frame', default='base_footprint')
 
     speed_params = {
@@ -57,7 +57,7 @@ def generate_launch_description():
         DeclareLaunchArgument('map', default_value='/home/nvidia/ros2_ws/my_map.yaml'),
         DeclareLaunchArgument('speed', default_value='high', description='Speed: high, medium, low'),
         DeclareLaunchArgument('params_file', default_value=''),
-        DeclareLaunchArgument('start_livox', default_value='false'),
+        DeclareLaunchArgument('start_livox', default_value='true'),
         DeclareLaunchArgument('pointcloud_target_frame', default_value='base_footprint'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(

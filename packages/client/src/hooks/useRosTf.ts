@@ -162,7 +162,8 @@ export function useRosTfTree(ros: ROSLIB.Ros | null, paused: boolean = false) {
       const baseLinkPose = resolvePoseInMap('base_link');
       const bodyPose = resolvePoseInMap('body');
       const cameraInitPose = resolvePoseInMap('camera_init');
-      const nextPose = baseFootprintPose || baseLinkPose || bodyPose || cameraInitPose;
+      const odomPose = resolvePoseInMap('odom');
+      const nextPose = baseFootprintPose || baseLinkPose || bodyPose || cameraInitPose || odomPose;
 
       latestRobotPoseRef.current = nextPose;
       setRobotPose(nextPose);

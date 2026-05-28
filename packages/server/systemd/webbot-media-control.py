@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import re
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -17,6 +18,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--frame-dir", default=str(Path.home() / ".local" / "state" / "webbot-media" / "frames"))
     parser.add_argument("--video-device", default="/dev/video0")
     parser.add_argument("--start-timeout-ms", type=int, default=12000)
+    parser.add_argument("--state-dir", default=str(Path.home() / ".local" / "state" / "webbot-media"))
+    parser.add_argument("--audio-capture-port", type=int, default=5005)
+    parser.add_argument("--audio-playback-port", type=int, default=5006)
+    parser.add_argument("--audio-capture-name", default="audio-capture")
+    parser.add_argument("--audio-playback-name", default="audio-playback")
     return parser.parse_args()
 
 
@@ -70,6 +76,77 @@ class MediaControlRuntime:
 
         return len(frames), iso_from_timestamp(frames[0].stat().st_mtime)
 
+    def process_status(self, name: str) -> dict[str, object]:
+        result = subprocess.run(
+            ["pgrep", "-af", name],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        lines = [line for line in result.stdout.splitlines() if "pgrep -af" not in line]
+        return {
+            "name": name,
+            "active": len(lines) > 0,
+            "matches": lines[:5],
+        }
+
+    def udp_port_status(self, port: int) -> dict[str, object]:
+        result = subprocess.run(
+            ["ss", "-lunp"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        pattern = re.compile(rf":{port}(?:\s|$)")
+        lines = [line for line in result.stdout.splitlines() if pattern.search(line)]
+        return {
+            "port": port,
+            "listening": len(lines) > 0,
+            "matches": lines[:5],
+        }
+
+    def log_tail(self, name: str, max_lines: int = 40) -> dict[str, object]:
+        path = Path(self.args.state_dir) / f"{name}.log"
+        if not path.exists():
+            return {
+                "path": str(path),
+                "exists": False,
+                "lines": [],
+            }
+
+        try:
+            lines = path.read_text(errors="replace").splitlines()[-max_lines:]
+        except OSError as exc:
+            return {
+                "path": str(path),
+                "exists": True,
+                "error": str(exc),
+                "lines": [],
+            }
+
+        return {
+            "path": str(path),
+            "exists": True,
+            "updatedAt": iso_from_timestamp(path.stat().st_mtime),
+            "lines": lines,
+        }
+
+    def audio_status(self) -> dict[str, object]:
+        capture_name = self.args.audio_capture_name
+        playback_name = self.args.audio_playback_name
+        return {
+            "capture": {
+                "process": self.process_status(f"alsasrc .*{self.args.audio_capture_port}|rtpopuspay"),
+                "port": self.udp_port_status(self.args.audio_capture_port),
+                "log": self.log_tail(capture_name, 20),
+            },
+            "playback": {
+                "process": self.process_status(f"udpsrc port={self.args.audio_playback_port}|rtpopusdepay|alsasink"),
+                "port": self.udp_port_status(self.args.audio_playback_port),
+                "log": self.log_tail(playback_name, 40),
+            },
+        }
+
     def video_status(self) -> dict[str, object]:
         state = self.read_service_state(self.args.video_service)
         media_state = self.read_service_state(self.args.media_service)
@@ -93,6 +170,7 @@ class MediaControlRuntime:
                 "subState": media_state["subState"],
                 "result": media_state["result"],
             },
+            "audio": self.audio_status(),
         }
 
     def video_pipeline_ready(self, status: dict[str, object]) -> bool:
