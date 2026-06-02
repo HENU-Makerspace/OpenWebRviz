@@ -476,12 +476,12 @@ class SystemManager(Node):
             msg.mode.stand_mode = stand_mode
             msg.mode.pitch_ctrl_mode = False
             msg.mode.roll_ctrl_mode = False
-            msg.mode.height_ctrl_mode = True
+            msg.mode.height_ctrl_mode = False
             msg.mode.jump_mode = False
             msg.mode.split_mode = False
             msg.value.forward = 0.0
             msg.value.left = 0.0
-            msg.value.up = 1.0 if stand_mode else 0.0
+            msg.value.up = 1.0
             msg.value.roll = 0.0
             msg.value.pitch = 0.0
             msg.value.leg_split = 0.0

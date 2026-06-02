@@ -48,7 +48,8 @@ class StopGuard(Node):
         msg.mode.stand_mode = True  # 保持站立状态
         msg.mode.pitch_ctrl_mode = False
         msg.mode.roll_ctrl_mode = False
-        msg.mode.height_ctrl_mode = True  # 保持高度控制
+        # Diablo OSDK: False is height-position control; True is vertical velocity.
+        msg.mode.height_ctrl_mode = False
         msg.mode.jump_mode = False
         msg.mode.split_mode = False
 

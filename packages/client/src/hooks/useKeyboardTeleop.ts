@@ -30,12 +30,14 @@ export function useKeyboardTeleop(
   const manualCommandRef = useRef<{ linear: number; angular: number } | null>(null);
   const publishTimerRef = useRef<number | null>(null);
   const standModeRef = useRef(settings.standMode);
+  const upTargetRef = useRef(settings.up || 0.0);
   const stanceTimerIdsRef = useRef<number[]>([]);
   const [standMode, setStandMode] = useState(settings.standMode);
 
   useEffect(() => {
     setStandMode(settings.standMode);
     standModeRef.current = settings.standMode;
+    upTargetRef.current = settings.standMode ? 1.0 : (settings.up || upTargetRef.current);
   }, [settings.standMode]);
 
   const sendCommand = useCallback((linear: number, angular: number, nextStandMode?: boolean, modeMark = false) => {
@@ -49,14 +51,15 @@ export function useKeyboardTeleop(
         stand_mode: activeStandMode,
         pitch_ctrl_mode: false,
         roll_ctrl_mode: false,
-        height_ctrl_mode: true,
+        // Diablo OSDK uses false for height-position control and true for vertical velocity.
+        height_ctrl_mode: false,
         jump_mode: false,
         split_mode: false,
       },
       value: {
         forward: linear,
         left: angular,
-        up: activeStandMode ? 1.0 : 0.0,
+        up: upTargetRef.current,
         roll: 0.0,
         pitch: 0.0,
         leg_split: 0.0,
@@ -84,6 +87,9 @@ export function useKeyboardTeleop(
 
     standModeRef.current = nextStandMode;
     setStandMode(nextStandMode);
+    if (nextStandMode) {
+      upTargetRef.current = 1.0;
+    }
 
     const publishStandCmd = () => {
       if (standCmdPubRef.current) {
@@ -93,23 +99,17 @@ export function useKeyboardTeleop(
     };
 
     publishStandCmd();
+    sendCommand(0, 0, nextStandMode, true);
 
-    for (let i = 0; i < 10; i += 1) {
-      stanceTimerIdsRef.current.push(window.setTimeout(() => {
-        publishStandCmd();
-        sendCommand(0, 0, nextStandMode, true);
-      }, i * 40));
-    }
-
-    for (let i = 0; i < 5; i += 1) {
+    for (let i = 0; i < 20; i += 1) {
       stanceTimerIdsRef.current.push(window.setTimeout(() => {
         sendCommand(0, 0, nextStandMode, false);
-      }, 420 + i * 60));
+      }, 40 + i * 40));
     }
 
     stanceTimerIdsRef.current.push(window.setTimeout(() => {
       stanceTimerIdsRef.current = [];
-    }, 800));
+    }, 900));
   }, [enabled, sendCommand]);
 
   // Initialize publisher

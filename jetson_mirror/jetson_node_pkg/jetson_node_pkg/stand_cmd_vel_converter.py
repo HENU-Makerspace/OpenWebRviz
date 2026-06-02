@@ -21,6 +21,7 @@ class StandCmdVelConverter(Node):
         # 状态机变量
         self.is_standing = True       # 默认目标是站立
         self.transition_ticks = 15    # 启动时先给 15 帧 (0.6秒) 的变形信号，确保底盘能收到
+        self.mode_command_pending = True
 
         self.get_logger().info("站立控制节点已启动！正在发送站立序列...")
 
@@ -37,6 +38,7 @@ class StandCmdVelConverter(Node):
             self.is_standing = msg.data
             # 给定 10 帧 (10 * 0.04 = 0.4秒) 的"按键时间"
             self.transition_ticks = 10
+            self.mode_command_pending = True
             state_str = "站立" if self.is_standing else "趴下"
             self.get_logger().info(f"收到指令：开始执行 {state_str} 序列...")
 
@@ -46,10 +48,10 @@ class StandCmdVelConverter(Node):
         # ==========================================
 
         if self.transition_ticks > 0:
-            # 【过渡期】：连续发送 mode_mark=True
-            # 变形期间，高度设置为目标高度（不发送0.0！）
-            current_up = self.target_up if self.is_standing else 0.0
-            self.publish_state(mode_mark=True, stand_mode=self.is_standing, up=current_up)
+            # 【过渡期】：mode_mark=True 只发一帧触发变形；后续普通帧维持目标高度。
+            current_up = self.target_up
+            self.publish_state(mode_mark=self.mode_command_pending, stand_mode=self.is_standing, up=current_up)
+            self.mode_command_pending = False
             self.transition_ticks -= 1
 
             if self.transition_ticks == 0:
@@ -57,8 +59,8 @@ class StandCmdVelConverter(Node):
                 self.get_logger().info(f"{state_str} 变形信号发送完毕，进入高度锁定！")
         else:
             # 【稳定期】：松开按键 (mode_mark=False)，维持当前设定
-            # 如果是站立，推到 target_up；如果是趴下，就是 0.0
-            current_up = self.target_up if self.is_standing else 0.0
+            # up 是站立高度目标，不是蹲下开关；蹲下只通过 stand_mode 触发。
+            current_up = self.target_up
             self.publish_state(mode_mark=False, stand_mode=self.is_standing, up=current_up)
 
     def publish_state(self, mode_mark, stand_mode, up):
@@ -67,7 +69,8 @@ class StandCmdVelConverter(Node):
         msg.mode.stand_mode = stand_mode
         msg.mode.pitch_ctrl_mode = False
         msg.mode.roll_ctrl_mode = False
-        msg.mode.height_ctrl_mode = True   # 【关键】开启高度闭环
+        # Diablo OSDK: height_ctrl_mode=False 是高度位置控制，True 是垂直速度控制。
+        msg.mode.height_ctrl_mode = False
         msg.mode.jump_mode = False
         msg.mode.split_mode = False
         msg.value.forward = self.current_forward
