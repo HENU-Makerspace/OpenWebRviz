@@ -15,12 +15,19 @@ interface MapCanvasProps {
   navClickMode?: 'none' | 'initial_pose' | 'goal' | 'waypoint';
   setNavClickMode?: (mode: 'none' | 'initial_pose' | 'goal' | 'waypoint') => void;
   selectedMap?: string | null;
+  staticMapData?: MapData | null;
+  staticMapLoading?: boolean;
+  useStaticMap?: boolean;
+  mapEditEnabled?: boolean;
+  brushSizeCells?: number;
+  editedCells?: ReadonlySet<number>;
   navigationTaskMode?: NavigationTaskMode;
   navigationPoints?: NavigationPose[];
   pathResetToken?: number;
   onGoalPoseSelected?: (pose: NavigationPose) => void;
   onWaypointAdded?: (pose: NavigationPose) => void;
   onInitialPoseSelected?: (pose: NavigationPose) => void;
+  onEraseCells?: (cells: number[]) => void;
 }
 
 interface ViewState {
@@ -47,12 +54,19 @@ export function MapCanvas({
   navClickMode = 'none',
   setNavClickMode,
   selectedMap = null,
+  staticMapData = null,
+  staticMapLoading = false,
+  useStaticMap = false,
+  mapEditEnabled = false,
+  brushSizeCells = 1,
+  editedCells,
   navigationTaskMode = 'single',
   navigationPoints = [],
   pathResetToken = 0,
   onGoalPoseSelected,
   onWaypointAdded,
   onInitialPoseSelected,
+  onEraseCells,
 }: MapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapLayerRef = useRef<HTMLCanvasElement>(null);
@@ -73,6 +87,7 @@ export function MapCanvas({
     currentWorldY: number;
     mode: 'initial_pose' | 'goal' | 'waypoint';
   } | null>(null);
+  const [editPointer, setEditPointer] = useState<{ col: number; row: number } | null>(null);
 
   const { layers, subscriptionSettings } = useLayers();
   const { mode } = useMode();
@@ -88,7 +103,7 @@ export function MapCanvas({
   const pathPaused = isPaused || !needsPath;
   const scanPaused = isPaused || !needsScan;
 
-  const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused);
+  const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused || useStaticMap);
   const { robotPose: tfPose, resolvePoseInMap, tfVersion } = useRosTfTree(ros, tfPaused);
   const { globalPath } = useRosPath(ros, '/plan', pathPaused, pathResetToken);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
@@ -103,9 +118,18 @@ export function MapCanvas({
   useEffect(() => {
     lastAutoFitKeyRef.current = null;
     userAdjustedViewRef.current = false;
-  }, [mode, selectedMap]);
+    mapRasterRef.current = null;
+    setEditPointer(null);
+  }, [mode, selectedMap, useStaticMap]);
 
   useEffect(() => {
+    if (useStaticMap) {
+      ignoredNavMapRef.current = null;
+      setFrozenNavMap(null);
+      setDisplayMapData(staticMapData);
+      return;
+    }
+
     if (mode !== 'navigation') {
       ignoredNavMapRef.current = null;
       return;
@@ -122,10 +146,10 @@ export function MapCanvas({
     ignoredNavMapRef.current = null;
     setFrozenNavMap(null);
     setDisplayMapData(null);
-  }, [mode, selectedMap]);
+  }, [mode, selectedMap, staticMapData, useStaticMap]);
 
   useEffect(() => {
-    if (mode !== 'navigation') {
+    if (useStaticMap || mode !== 'navigation') {
       setFrozenNavMap(null);
       return;
     }
@@ -133,14 +157,16 @@ export function MapCanvas({
     if (!frozenNavMap && mapData && mapData !== ignoredNavMapRef.current) {
       setFrozenNavMap(mapData);
     }
-  }, [mode, mapData, frozenNavMap]);
+  }, [mode, mapData, frozenNavMap, useStaticMap]);
 
   useEffect(() => {
     if (subscriptionSettings.paused) {
       return;
     }
 
-    if (mode === 'navigation') {
+    if (useStaticMap) {
+      setDisplayMapData(staticMapData);
+    } else if (mode === 'navigation') {
       setDisplayMapData(frozenNavMap);
     } else if (mapData) {
       setDisplayMapData(mapData);
@@ -149,7 +175,7 @@ export function MapCanvas({
     if (actualPose) {
       setDisplayPose(actualPose);
     }
-  }, [actualPose, frozenNavMap, mapData, mode, subscriptionSettings.paused]);
+  }, [actualPose, frozenNavMap, mapData, mode, staticMapData, subscriptionSettings.paused, useStaticMap]);
 
   useEffect(() => {
     if (!displayMapData) {
@@ -372,6 +398,21 @@ export function MapCanvas({
 
         ctx.imageSmoothingEnabled = false;
         ctx.drawImage(cachedMap.canvas, drawX, drawY, drawWidth, drawHeight);
+
+        if (editedCells && editedCells.size > 0) {
+          const cellSize = cachedMap.resolution * view.scale;
+          ctx.fillStyle = '#ffffff';
+          for (const index of editedCells) {
+            if (!Number.isFinite(index) || index < 0 || index >= cachedMap.width * cachedMap.height) {
+              continue;
+            }
+            const col = index % cachedMap.width;
+            const row = Math.floor(index / cachedMap.width);
+            const cellX = view.offsetX + (cachedMap.originX + col * cachedMap.resolution) * view.scale;
+            const cellY = view.offsetY - (cachedMap.originY + (row + 1) * cachedMap.resolution) * view.scale;
+            ctx.fillRect(cellX, cellY, Math.max(1, cellSize), Math.max(1, cellSize));
+          }
+        }
       }
 
       const origin = worldToScreen(info.origin.position.x, info.origin.position.y);
@@ -383,7 +424,7 @@ export function MapCanvas({
       ctx.font = '12px sans-serif';
       ctx.fillText('原点', origin.x + 8, origin.y - 8);
     }
-  }, [canvasSize, displayMapData, isConnected, layers.map, view.offsetX, view.offsetY, view.scale, worldToScreen]);
+  }, [canvasSize, displayMapData, editedCells, isConnected, layers.map, view.offsetX, view.offsetY, view.scale, worldToScreen]);
 
   const drawPathLayer = useCallback(() => {
     const canvas = pathLayerRef.current;
@@ -588,7 +629,38 @@ export function MapCanvas({
         start.y - 10
       );
     }
-  }, [canvasSize, displayMapData, displayPose, layers.scan, layers.tf, navDrag, resolvePoseInMap, scanData, tfVersion, worldToScreen]);
+
+    if (mapEditEnabled && editPointer && displayMapData) {
+      const { info } = displayMapData;
+      const diameter = Math.max(1, Math.round(brushSizeCells));
+      const radiusMeters = Math.max(info.resolution / 2, (diameter * info.resolution) / 2);
+      const center = worldToScreen(
+        info.origin.position.x + (editPointer.col + 0.5) * info.resolution,
+        info.origin.position.y + (editPointer.row + 0.5) * info.resolution
+      );
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, Math.max(3, radiusMeters * view.scale), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }, [
+    brushSizeCells,
+    canvasSize,
+    displayMapData,
+    displayPose,
+    editPointer,
+    layers.scan,
+    layers.tf,
+    mapEditEnabled,
+    navDrag,
+    resolvePoseInMap,
+    scanData,
+    tfVersion,
+    view.scale,
+    worldToScreen,
+  ]);
 
   useLayoutEffect(() => {
     drawMapLayer();
@@ -613,10 +685,88 @@ export function MapCanvas({
     }));
   }, []);
 
+  const worldToCell = useCallback(
+    (worldX: number, worldY: number) => {
+      if (!displayMapData) {
+        return null;
+      }
+
+      const { info } = displayMapData;
+      const col = Math.floor((worldX - info.origin.position.x) / info.resolution);
+      const row = Math.floor((worldY - info.origin.position.y) / info.resolution);
+      if (col < 0 || row < 0 || col >= info.width || row >= info.height) {
+        return null;
+      }
+
+      return { col, row, index: row * info.width + col };
+    },
+    [displayMapData]
+  );
+
+  const collectBrushCells = useCallback(
+    (centerCol: number, centerRow: number) => {
+      if (!displayMapData) {
+        return [];
+      }
+
+      const { width, height } = displayMapData.info;
+      const diameter = Math.max(1, Math.round(brushSizeCells));
+      const radius = Math.max(0.5, diameter / 2);
+      const minOffset = -Math.floor((diameter - 1) / 2);
+      const maxOffset = Math.ceil((diameter - 1) / 2);
+      const cells: number[] = [];
+
+      for (let dy = minOffset; dy <= maxOffset; dy++) {
+        for (let dx = minOffset; dx <= maxOffset; dx++) {
+          if (diameter > 1 && dx * dx + dy * dy > radius * radius) {
+            continue;
+          }
+          const col = centerCol + dx;
+          const row = centerRow + dy;
+          if (col < 0 || row < 0 || col >= width || row >= height) {
+            continue;
+          }
+          cells.push(row * width + col);
+        }
+      }
+
+      return cells;
+    },
+    [brushSizeCells, displayMapData]
+  );
+
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       const canvas = interactionLayerRef.current;
       if (!canvas) {
+        return;
+      }
+
+      if (useStaticMap && mapEditEnabled && displayMapData && onEraseCells) {
+        const eraseAt = (clientX: number, clientY: number) => {
+          const rect = canvas.getBoundingClientRect();
+          const { x, y } = screenToWorld(clientX - rect.left, clientY - rect.top);
+          const cell = worldToCell(x, y);
+          if (!cell) {
+            setEditPointer(null);
+            return;
+          }
+
+          setEditPointer({ col: cell.col, row: cell.row });
+          const cells = collectBrushCells(cell.col, cell.row);
+          if (cells.length > 0) {
+            onEraseCells(cells);
+          }
+        };
+
+        eraseAt(e.clientX, e.clientY);
+        const handleMouseMove = (moveEvent: MouseEvent) => eraseAt(moveEvent.clientX, moveEvent.clientY);
+        const handleMouseUp = () => {
+          window.removeEventListener('mousemove', handleMouseMove);
+          window.removeEventListener('mouseup', handleMouseUp);
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
         return;
       }
 
@@ -706,10 +856,13 @@ export function MapCanvas({
     },
     [
       computeTheta,
+      collectBrushCells,
       createPose,
       displayMapData,
+      mapEditEnabled,
       mode,
       navClickMode,
+      onEraseCells,
       onGoalPoseSelected,
       onInitialPoseSelected,
       onWaypointAdded,
@@ -717,11 +870,41 @@ export function MapCanvas({
       publishInitialPose,
       screenToWorld,
       setNavClickMode,
+      useStaticMap,
       view,
+      worldToCell,
     ]
   );
 
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!useStaticMap || !mapEditEnabled || !displayMapData) {
+        return;
+      }
+
+      const canvas = interactionLayerRef.current;
+      if (!canvas) {
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const { x, y } = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const cell = worldToCell(x, y);
+      setEditPointer(cell ? { col: cell.col, row: cell.row } : null);
+    },
+    [displayMapData, mapEditEnabled, screenToWorld, useStaticMap, worldToCell]
+  );
+
+  const handleMouseLeave = useCallback(() => {
+    setEditPointer(null);
+  }, []);
+
   const overlayMap = displayMapData;
+  const cursorClass = mapEditEnabled && useStaticMap
+    ? 'cursor-crosshair'
+    : navClickMode !== 'none'
+      ? 'cursor-crosshair'
+      : 'cursor-grab active:cursor-grabbing';
 
   return (
     <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-gray-900">
@@ -734,15 +917,24 @@ export function MapCanvas({
         height={canvasSize.height}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
-        className={`absolute inset-0 h-full w-full ${navClickMode !== 'none' ? 'cursor-crosshair' : 'cursor-grab active:cursor-grabbing'}`}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className={`absolute inset-0 h-full w-full ${cursorClass}`}
       />
+
+      {staticMapLoading && useStaticMap && !overlayMap && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-slate-300">
+          正在加载地图...
+        </div>
+      )}
 
       {overlayMap && (
         <div className="absolute bottom-4 left-4 rounded bg-black/70 px-3 py-2 text-xs text-white">
           <div>分辨率：{overlayMap.info.resolution.toFixed(3)} m/cell</div>
           <div>尺寸：{overlayMap.info.width} x {overlayMap.info.height}</div>
           <div>缩放：{view.scale.toFixed(1)} px/m</div>
-          <div>模式：{mode === 'navigation' ? '冻结首帧 /map' : '实时 /map'}</div>
+          <div>模式：{useStaticMap ? `静态地图：${selectedMap || '-'}` : mode === 'navigation' ? '冻结首帧 /map' : '实时 /map'}</div>
+          {mapEditEnabled && useStaticMap && <div>擦除：{Math.max(1, Math.round(brushSizeCells))} px</div>}
           {mode === 'navigation' && navigationPoints.length > 0 && <div>导航点：{navigationPoints.length} 个</div>}
         </div>
       )}

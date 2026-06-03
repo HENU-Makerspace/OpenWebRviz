@@ -18,10 +18,20 @@ from jetson_interfaces.srv import StartNav
 from std_msgs.msg import String
 
 try:
+    import yaml
+except ImportError:
+    yaml = None
+
+try:
     from geometry_msgs.msg import PoseWithCovarianceStamped, Twist
 except ImportError:
     PoseWithCovarianceStamped = None
     Twist = None
+
+try:
+    from nav_msgs.msg import OccupancyGrid
+except ImportError:
+    OccupancyGrid = None
 
 try:
     from motion_msgs.msg import MotionCtrl
@@ -159,6 +169,10 @@ class SystemManager(Node):
         self.nav_motion_last_cmd_time = None
         self.nav_motion_last_stop_time = 0.0
         self.map_list_topic = '/system/map_list'
+        self.static_map_topic = '/system/static_map'
+        self.static_map_request_topic = '/system/request_static_map'
+        self.map_edit_topic = '/system/edit_map'
+        self.map_edit_result_topic = '/system/edit_map_result'
 
         # Use hardcoded server URL from parameter
         self.server_url = self.get_parameter('server_url').value
@@ -177,6 +191,9 @@ class SystemManager(Node):
         else:
             self.get_logger().warn('geometry_msgs.msg.PoseWithCovarianceStamped is unavailable; fixed initial pose is disabled')
 
+        self.create_subscription(String, self.static_map_request_topic, self.handle_static_map_request, 10)
+        self.create_subscription(String, self.map_edit_topic, self.handle_edit_map, 10)
+
         self.cmd_vel_pub = None
         if Twist is not None:
             self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -192,6 +209,12 @@ class SystemManager(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.map_list_pub = self.create_publisher(String, self.map_list_topic, map_list_qos)
+        self.static_map_pub = None
+        if OccupancyGrid is not None:
+            self.static_map_pub = self.create_publisher(OccupancyGrid, self.static_map_topic, map_list_qos)
+        else:
+            self.get_logger().warn('nav_msgs.msg.OccupancyGrid is unavailable; static map publishing is disabled')
+        self.map_edit_result_pub = self.create_publisher(String, self.map_edit_result_topic, map_list_qos)
 
         os.makedirs(self.maps_dir, exist_ok=True)
 
@@ -208,6 +231,256 @@ class SystemManager(Node):
     def get_fixed_initial_pose_path(self, map_yaml_file):
         root, _ = os.path.splitext(os.path.abspath(map_yaml_file))
         return f'{root}.initialpose.json'
+
+    def get_map_identity(self, map_yaml_file):
+        root, _ = os.path.splitext(os.path.basename(str(map_yaml_file)))
+        return root
+
+    def is_managed_process_running(self):
+        return self.current_process is not None and self.current_process.poll() is None
+
+    def resolve_map_paths(self, map_yaml_file):
+        maps_dir = os.path.abspath(self.maps_dir)
+        yaml_path = os.path.abspath(str(map_yaml_file))
+        try:
+            common_path = os.path.commonpath([maps_dir, yaml_path])
+        except ValueError:
+            common_path = ''
+
+        if common_path != maps_dir:
+            raise ValueError(f'map path is outside maps_dir: {map_yaml_file}')
+        if not yaml_path.endswith('.yaml'):
+            raise ValueError(f'map file must be a yaml file: {map_yaml_file}')
+        if not os.path.exists(yaml_path):
+            raise FileNotFoundError(f'map yaml not found: {yaml_path}')
+
+        metadata = self.parse_map_yaml(yaml_path)
+        image_path = str(metadata.get('image') or '').strip()
+        if image_path:
+            pgm_path = image_path
+            if not os.path.isabs(pgm_path):
+                pgm_path = os.path.join(os.path.dirname(yaml_path), pgm_path)
+            pgm_path = os.path.abspath(pgm_path)
+        else:
+            root, _ = os.path.splitext(yaml_path)
+            pgm_path = f'{root}.pgm'
+
+        try:
+            common_image_path = os.path.commonpath([maps_dir, pgm_path])
+        except ValueError:
+            common_image_path = ''
+        if common_image_path != maps_dir:
+            raise ValueError(f'map image path is outside maps_dir: {pgm_path}')
+        if not os.path.exists(pgm_path):
+            raise FileNotFoundError(f'map pgm not found: {pgm_path}')
+
+        return yaml_path, pgm_path, metadata
+
+    def parse_map_yaml(self, yaml_path):
+        with open(yaml_path, 'r', encoding='utf-8') as file:
+            text = file.read()
+
+        if yaml is not None:
+            payload = yaml.safe_load(text) or {}
+        else:
+            payload = {}
+            for line in text.splitlines():
+                stripped = line.split('#', 1)[0].strip()
+                if ':' not in stripped:
+                    continue
+                key, value = stripped.split(':', 1)
+                payload[key.strip()] = value.strip()
+
+        origin = payload.get('origin', [0.0, 0.0, 0.0])
+        if isinstance(origin, str):
+            origin = json.loads(origin.replace("'", '"'))
+
+        return {
+            'image': payload.get('image', ''),
+            'resolution': float(payload.get('resolution', 0.05)),
+            'origin': [
+                float(origin[0] if len(origin) > 0 else 0.0),
+                float(origin[1] if len(origin) > 1 else 0.0),
+                float(origin[2] if len(origin) > 2 else 0.0),
+            ],
+            'negate': int(payload.get('negate', 0)),
+        }
+
+    def parse_p5_pgm(self, pgm_path):
+        with open(pgm_path, 'rb') as file:
+            content = file.read()
+
+        tokens = []
+        index = 0
+        length = len(content)
+        while len(tokens) < 4:
+            while index < length and content[index] in b' \t\r\n':
+                index += 1
+            if index < length and content[index] == ord('#'):
+                while index < length and content[index] not in b'\r\n':
+                    index += 1
+                continue
+            if index >= length:
+                raise ValueError('unexpected end of PGM header')
+
+            start = index
+            while index < length and content[index] not in b' \t\r\n':
+                index += 1
+            tokens.append(content[start:index].decode('ascii'))
+
+        if tokens[0] != 'P5':
+            raise ValueError(f'unsupported PGM format: {tokens[0]}')
+        width = int(tokens[1])
+        height = int(tokens[2])
+        max_value = int(tokens[3])
+        if width <= 0 or height <= 0:
+            raise ValueError(f'invalid PGM size: {width}x{height}')
+        if max_value <= 0 or max_value > 255:
+            raise ValueError(f'unsupported PGM max value: {max_value}')
+
+        if index >= length or content[index] not in b' \t\r\n':
+            raise ValueError('invalid PGM header terminator')
+        if content[index:index + 2] == b'\r\n':
+            index += 2
+        else:
+            index += 1
+
+        pixel_count = width * height
+        if len(content) - index < pixel_count:
+            raise ValueError(f'PGM pixel data is truncated: expected {pixel_count}, got {len(content) - index}')
+
+        return content, index, width, height, max_value
+
+    def build_static_map_message(self, map_yaml_file, request_id):
+        if OccupancyGrid is None:
+            raise RuntimeError('OccupancyGrid message type is unavailable')
+
+        yaml_path, pgm_path, metadata = self.resolve_map_paths(map_yaml_file)
+        content, pixel_offset, width, height, max_value = self.parse_p5_pgm(pgm_path)
+        pixels = content[pixel_offset:pixel_offset + width * height]
+        data = [0] * (width * height)
+        negate = metadata['negate'] != 0
+
+        for row in range(height):
+            for col in range(width):
+                pgm_index = (height - 1 - row) * width + col
+                normalized = pixels[pgm_index] / float(max_value)
+                value = round(normalized * 100) if negate else round(100 - normalized * 100)
+                data[row * width + col] = max(0, min(100, int(value)))
+
+        now = self.get_clock().now().to_msg()
+        origin_x, origin_y, origin_yaw = metadata['origin']
+        map_name = self.get_map_identity(yaml_path)
+        grid = OccupancyGrid()
+        grid.header.stamp = now
+        grid.header.frame_id = f'static_map|{request_id}|{map_name}'
+        grid.info.map_load_time = now
+        grid.info.resolution = metadata['resolution']
+        grid.info.width = width
+        grid.info.height = height
+        grid.info.origin.position.x = origin_x
+        grid.info.origin.position.y = origin_y
+        grid.info.origin.position.z = 0.0
+        grid.info.origin.orientation.x = 0.0
+        grid.info.origin.orientation.y = 0.0
+        grid.info.origin.orientation.z = math.sin(origin_yaw / 2.0)
+        grid.info.origin.orientation.w = math.cos(origin_yaw / 2.0)
+        grid.data = data
+        return grid, map_name, yaml_path
+
+    def handle_static_map_request(self, msg):
+        try:
+            payload = json.loads(msg.data or '{}')
+            request_id = str(payload.get('requestId') or '').strip()
+            map_yaml_file = str(payload.get('mapYamlFile') or payload.get('map_yaml_file') or '').strip()
+            if not request_id or not map_yaml_file:
+                self.get_logger().warn('Ignored static map request without requestId or mapYamlFile')
+                return
+            if self.static_map_pub is None:
+                self.get_logger().warn('Ignored static map request because static map publisher is disabled')
+                return
+
+            grid, map_name, yaml_path = self.build_static_map_message(map_yaml_file, request_id)
+            self.static_map_pub.publish(grid)
+            self.get_logger().info(f'Published static map {map_name} for request {request_id}: {yaml_path}')
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to publish static map: {exc}')
+
+    def publish_map_edit_result(self, request_id, map_name, success, message, changed_count=0, backup_path=''):
+        result = String()
+        result.data = json.dumps({
+            'requestId': request_id,
+            'mapName': map_name,
+            'success': bool(success),
+            'message': str(message),
+            'changedCount': int(changed_count),
+            'backupPath': backup_path,
+        }, ensure_ascii=True)
+        self.map_edit_result_pub.publish(result)
+
+    def handle_edit_map(self, msg):
+        request_id = ''
+        map_name = ''
+        try:
+            payload = json.loads(msg.data or '{}')
+            request_id = str(payload.get('requestId') or '').strip()
+            map_yaml_file = str(payload.get('mapYamlFile') or payload.get('map_yaml_file') or '').strip()
+            operation = str(payload.get('operation') or '').strip()
+            cells = payload.get('cells')
+            map_name = self.get_map_identity(map_yaml_file)
+
+            if not request_id or not map_yaml_file:
+                raise ValueError('requestId and mapYamlFile are required')
+            if operation != 'erase':
+                raise ValueError(f'unsupported operation: {operation}')
+            if self.is_managed_process_running():
+                raise RuntimeError(f'cannot edit map while {self.process_name} is running')
+            if not isinstance(cells, list) or not cells:
+                raise ValueError('cells must be a non-empty list')
+            if len(cells) > 200000:
+                raise ValueError(f'too many cells: {len(cells)}')
+
+            yaml_path, pgm_path, _ = self.resolve_map_paths(map_yaml_file)
+            map_name = self.get_map_identity(yaml_path)
+            content, pixel_offset, width, height, max_value = self.parse_p5_pgm(pgm_path)
+            pixel_count = width * height
+            edited = bytearray(content)
+            changed_count = 0
+            seen = set()
+
+            for cell in cells:
+                try:
+                    index = int(cell)
+                except (TypeError, ValueError):
+                    continue
+                if index < 0 or index >= pixel_count or index in seen:
+                    continue
+                seen.add(index)
+                row = index // width
+                col = index % width
+                pgm_index = (height - 1 - row) * width + col
+                pixel_index = pixel_offset + pgm_index
+                if edited[pixel_index] != max_value:
+                    edited[pixel_index] = max_value
+                    changed_count += 1
+
+            if changed_count == 0:
+                self.publish_map_edit_result(request_id, map_name, True, 'no pixel changes', 0, '')
+                return
+
+            timestamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+            backup_path = f'{pgm_path}.bak_{timestamp}'
+            tmp_path = f'{pgm_path}.tmp'
+            with open(backup_path, 'wb') as file:
+                file.write(content)
+            with open(tmp_path, 'wb') as file:
+                file.write(edited)
+            os.replace(tmp_path, pgm_path)
+            self.publish_map_edit_result(request_id, map_name, True, 'map edited', changed_count, backup_path)
+            self.get_logger().info(f'Erased {changed_count} cells in {pgm_path}; backup={backup_path}')
+        except Exception as exc:
+            self.get_logger().warn(f'Failed to edit map: {exc}')
+            self.publish_map_edit_result(request_id, map_name, False, str(exc), 0, '')
 
     def handle_fixed_initial_pose(self, msg):
         try:

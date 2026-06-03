@@ -3,6 +3,7 @@ import {
   Activity,
   ChevronDown,
   CircleHelp,
+  Eraser,
   Gamepad2,
   Info,
   Layers,
@@ -12,8 +13,10 @@ import {
   Mic,
   Radio,
   Route,
+  Save,
   Settings,
   Square,
+  Undo2,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
@@ -30,6 +33,7 @@ import { useSlamControl, useMapManager } from './hooks/useSlamControl';
 import { useFaceRecognition } from './hooks/useFaceRecognition';
 import { useNavigationTasks } from './hooks/useNavigationTasks';
 import { useFixedInitialPosePublisher } from './hooks/useRosPath';
+import { useStaticMap } from './hooks/useStaticMap';
 import { useSystemManager } from './hooks/useSystemManager';
 import type { NavigationPose, NavigationTaskMode, NavigationTaskStatus } from './hooks/useNavigationTasks';
 import backgroundImage from '../../../img/background.png';
@@ -346,6 +350,18 @@ interface NavigationPanelProps {
   taskStatus: NavigationTaskStatus;
   taskRunning: boolean;
   fixedInitialPose: NavigationPose | null;
+  mapEditEnabled: boolean;
+  setMapEditEnabled: (enabled: boolean) => void;
+  brushSizeCells: number;
+  setBrushSizeCells: (size: number) => void;
+  pendingEditedCellCount: number;
+  mapEditSaving: boolean;
+  mapEditStatus: string | null;
+  staticMapLoading: boolean;
+  staticMapReady: boolean;
+  staticMapError: string | null;
+  onSaveMapEdits: () => void;
+  onClearMapEdits: () => void;
 }
 
 type Stance = 'stand' | 'crouch';
@@ -366,6 +382,18 @@ function NavigationPanel({
   taskStatus,
   taskRunning,
   fixedInitialPose,
+  mapEditEnabled,
+  setMapEditEnabled,
+  brushSizeCells,
+  setBrushSizeCells,
+  pendingEditedCellCount,
+  mapEditSaving,
+  mapEditStatus,
+  staticMapLoading,
+  staticMapReady,
+  staticMapError,
+  onSaveMapEdits,
+  onClearMapEdits,
   ros,
   isConnected,
 }: NavigationPanelProps & { ros: any; isConnected: boolean }) {
@@ -381,6 +409,7 @@ function NavigationPanel({
   const { publishFixedInitialPose } = useFixedInitialPosePublisher(ros);
 
   const isNavRunning = robotStatus.mode === 'navigation';
+  const mapEditingAvailable = Boolean(selectedMap) && !isNavRunning && robotStatus.mode !== 'slam' && staticMapReady;
 
   const startNavigation = async () => {
     console.log('[StartNav] clicked, selectedMap:', selectedMap, 'stance:', stance, 'speed:', speed, 'isNavRunning:', isNavRunning);
@@ -478,6 +507,87 @@ function NavigationPanel({
       {robotStatus.error && (
         <div className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600">
           {robotStatus.error}
+        </div>
+      )}
+
+      {selectedMap && !isNavRunning && (
+        <div className="rounded-md border border-cyan-300/18 bg-cyan-950/18 p-2.5">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="font-medium text-slate-200">地图编辑</span>
+            <span className="text-[11px] text-slate-500">
+              {staticMapLoading ? '加载中' : staticMapError ? '加载失败' : pendingEditedCellCount > 0 ? `${pendingEditedCellCount} 格未保存` : staticMapReady ? '就绪' : '等待地图'}
+            </span>
+          </div>
+          <div className="grid grid-cols-[3.25rem_1fr] items-center gap-x-2 gap-y-2">
+            <span className="text-slate-400">工具</span>
+            <button
+              type="button"
+              onClick={() => setMapEditEnabled(!mapEditEnabled)}
+              disabled={!mapEditingAvailable}
+              className={[
+                'inline-flex h-8 items-center justify-center gap-1.5 rounded border px-2 text-xs transition disabled:opacity-45',
+                mapEditEnabled
+                  ? 'border-amber-300/70 bg-amber-400/20 text-amber-100'
+                  : 'border-cyan-300/22 bg-slate-950/24 text-slate-300 hover:bg-cyan-500/12',
+              ].join(' ')}
+            >
+              <Eraser className="h-3.5 w-3.5" />
+              擦除
+            </button>
+
+            <span className="text-slate-400">刷子</span>
+            <div className="flex items-center gap-2">
+              <input
+                type="range"
+                min={1}
+                max={40}
+                step={1}
+                value={brushSizeCells}
+                onChange={(event) => setBrushSizeCells(Number(event.target.value))}
+                disabled={!mapEditingAvailable}
+                className="min-w-0 flex-1 accent-amber-300"
+              />
+              <input
+                type="number"
+                min={1}
+                max={40}
+                step={1}
+                value={brushSizeCells}
+                onChange={(event) => {
+                  const next = Number(event.target.value);
+                  if (Number.isFinite(next)) {
+                    setBrushSizeCells(Math.max(1, Math.min(40, Math.round(next))));
+                  }
+                }}
+                disabled={!mapEditingAvailable}
+                className="h-8 w-16 rounded border border-cyan-300/22 bg-slate-950/24 px-2 text-right text-xs text-slate-100"
+              />
+              <span className="shrink-0 text-slate-400">px</span>
+            </div>
+          </div>
+
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={onSaveMapEdits}
+              disabled={!mapEditingAvailable || pendingEditedCellCount === 0 || mapEditSaving}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-emerald-300/34 bg-emerald-500/18 px-2 text-xs text-emerald-100 transition hover:bg-emerald-500/28 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Save className="h-3.5 w-3.5" />
+              {mapEditSaving ? '保存中' : '保存'}
+            </button>
+            <button
+              type="button"
+              onClick={onClearMapEdits}
+              disabled={pendingEditedCellCount === 0 && !mapEditEnabled}
+              className="inline-flex h-8 items-center justify-center gap-1.5 rounded border border-slate-400/24 bg-slate-950/24 px-2 text-xs text-slate-300 transition hover:bg-slate-700/38 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              清除
+            </button>
+          </div>
+          {staticMapError && <div className="mt-2 text-[11px] text-rose-300">{staticMapError}</div>}
+          {mapEditStatus && <div className="mt-2 text-[11px] text-slate-400">{mapEditStatus}</div>}
         </div>
       )}
 
@@ -792,6 +902,13 @@ function AppContent() {
   const [patrolPoints, setPatrolPoints] = useState<NavigationPose[]>([]);
   const [fixedInitialPose, setFixedInitialPose] = useState<NavigationPose | null>(null);
   const navigationTasks = useNavigationTasks(ros, isConnected, config?.navigation || null);
+  const systemManager = useSystemManager(ros, isConnected);
+  const staticMap = useStaticMap(ros, selectedMap, isConnected);
+  const [mapEditEnabled, setMapEditEnabled] = useState(false);
+  const [brushSizeCells, setBrushSizeCells] = useState(1);
+  const [pendingEditedCells, setPendingEditedCells] = useState<Set<number>>(() => new Set());
+  const [mapEditSavingRequestId, setMapEditSavingRequestId] = useState<string | null>(null);
+  const [mapEditStatus, setMapEditStatus] = useState<string | null>(null);
 
   const teleop = useKeyboardTeleop(ros, {
     linearSpeed: 0.5,
@@ -837,10 +954,70 @@ function AppContent() {
     previousSelectedMapRef.current = selectedMap;
     setPatrolPoints([]);
     setFixedInitialPose(null);
+    setMapEditEnabled(false);
+    setPendingEditedCells(new Set());
+    setMapEditSavingRequestId(null);
+    setMapEditStatus(null);
     setNavClickMode('none');
     setMapSelectionResetToken((value) => value + 1);
     navigationTasks.cancelCurrentTask();
   }, [navigationTasks.cancelCurrentTask, selectedMap]);
+
+  useEffect(() => {
+    if (!staticMap.lastEditResult || !mapEditSavingRequestId) {
+      return;
+    }
+    if (staticMap.lastEditResult.requestId !== mapEditSavingRequestId) {
+      return;
+    }
+
+    setMapEditSavingRequestId(null);
+    if (staticMap.lastEditResult.success) {
+      setMapEditStatus(`已保存 ${staticMap.lastEditResult.changedCount} 格`);
+      setPendingEditedCells(new Set());
+      setMapEditEnabled(false);
+      window.setTimeout(() => setMapEditStatus(null), 2500);
+    } else {
+      setMapEditStatus(`保存失败：${staticMap.lastEditResult.message}`);
+    }
+  }, [mapEditSavingRequestId, staticMap.lastEditResult]);
+
+  const addEditedCells = (cells: number[]) => {
+    setPendingEditedCells((current) => {
+      let changed = false;
+      const next = new Set(current);
+
+      for (const cell of cells) {
+        if (!Number.isInteger(cell) || cell < 0 || next.has(cell)) {
+          continue;
+        }
+        next.add(cell);
+        changed = true;
+      }
+
+      return changed ? next : current;
+    });
+  };
+
+  const clearMapEdits = () => {
+    setPendingEditedCells(new Set());
+    setMapEditEnabled(false);
+    setMapEditStatus(null);
+  };
+
+  const saveMapEdits = () => {
+    if (!selectedMap || pendingEditedCells.size === 0 || mapEditSavingRequestId) {
+      return;
+    }
+
+    const requestId = staticMap.publishErase(selectedMap, Array.from(pendingEditedCells));
+    if (requestId) {
+      setMapEditSavingRequestId(requestId);
+      setMapEditStatus('保存中...');
+    } else {
+      setMapEditStatus('保存失败：ROS 未连接');
+    }
+  };
 
   const addPatrolPoint = (pose: NavigationPose) => {
     setPatrolPoints((prev) => [...prev, pose]);
@@ -952,7 +1129,7 @@ function AppContent() {
               {displayMode === 'teleop' ? (
                 <MappingPanel ros={ros} isConnected={isConnected} />
               ) : (
-                <NavigationPanel navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} setSelectedMap={setSelectedMap} taskMode={navigationTaskMode} setTaskMode={setNavigationTaskMode} patrolPoints={patrolPoints} onRemovePatrolPoint={removePatrolPoint} onClearPatrolPoints={clearPatrolPoints} onStartPatrolTask={startPatrolTask} onCancelTask={navigationTasks.cancelCurrentTask} taskStatus={navigationTasks.status} taskRunning={navigationTasks.isRunning} fixedInitialPose={fixedInitialPose} ros={ros} isConnected={isConnected} />
+                <NavigationPanel navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} setSelectedMap={setSelectedMap} taskMode={navigationTaskMode} setTaskMode={setNavigationTaskMode} patrolPoints={patrolPoints} onRemovePatrolPoint={removePatrolPoint} onClearPatrolPoints={clearPatrolPoints} onStartPatrolTask={startPatrolTask} onCancelTask={navigationTasks.cancelCurrentTask} taskStatus={navigationTasks.status} taskRunning={navigationTasks.isRunning} fixedInitialPose={fixedInitialPose} mapEditEnabled={mapEditEnabled} setMapEditEnabled={setMapEditEnabled} brushSizeCells={brushSizeCells} setBrushSizeCells={setBrushSizeCells} pendingEditedCellCount={pendingEditedCells.size} mapEditSaving={Boolean(mapEditSavingRequestId)} mapEditStatus={mapEditStatus} staticMapLoading={staticMap.loading} staticMapReady={Boolean(staticMap.mapData && staticMap.mapName === selectedMap)} staticMapError={staticMap.error} onSaveMapEdits={saveMapEdits} onClearMapEdits={clearMapEdits} ros={ros} isConnected={isConnected} />
               )}
             </TechPanel>
             <TechPanel title="系统设置" bodyClassName="p-3">
@@ -985,7 +1162,7 @@ function AppContent() {
               {showDebug && <DebugPanel />}
               {rightViewport === 'camera' ? (
                 <div className="relative z-10 h-full overflow-hidden rounded-lg bg-slate-950/26">
-                  <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} onInitialPoseSelected={setFixedInitialPose} />
+                  <MapCanvas ros={ros} isConnected={isConnected} navClickMode={navClickMode} setNavClickMode={setNavClickMode} selectedMap={selectedMap} staticMapData={staticMap.mapName === selectedMap ? staticMap.mapData : null} staticMapLoading={staticMap.loading} useStaticMap={displayMode === 'navigation' && Boolean(selectedMap) && systemManager.status.mode !== 'navigation'} mapEditEnabled={mapEditEnabled && systemManager.status.mode !== 'navigation'} brushSizeCells={brushSizeCells} editedCells={pendingEditedCells} navigationTaskMode={navigationTaskMode} navigationPoints={patrolPoints} pathResetToken={navigationTasks.pathResetToken + mapSelectionResetToken} onEraseCells={addEditedCells} onGoalPoseSelected={(pose) => void handleSingleGoalSelected(pose)} onWaypointAdded={addPatrolPoint} onInitialPoseSelected={setFixedInitialPose} />
                   <div className="absolute left-5 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-2"><MapToolButton icon={ZoomIn} /><MapToolButton icon={ZoomOut} /><MapToolButton icon={Maximize2} /><MapToolButton icon={LocateFixed} /><MapToolButton icon={Route} active={navClickMode !== 'none'} /></div>
                   <div className="absolute bottom-5 left-5 z-20 rounded-lg border border-cyan-300/38 bg-slate-950/52 px-4 py-3 text-xs text-slate-200 backdrop-blur-[3px]"><div className="flex items-center gap-2"><Info className="h-4 w-4 text-cyan-300" /><span>{guidanceText}</span></div></div>
                 </div>
