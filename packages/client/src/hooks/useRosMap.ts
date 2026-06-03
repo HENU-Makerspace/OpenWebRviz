@@ -30,7 +30,12 @@ function getMapCacheKey(mapTopic: string) {
   return `webbot-map-cache:${mapTopic}`;
 }
 
-export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/map', paused: boolean = false) {
+export function useRosMap(
+  ros: ROSLIB.Ros | null,
+  mapTopic: string | null = '/map',
+  paused: boolean = false,
+  cacheEnabled: boolean = true
+) {
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [robotPose, setRobotPose] = useState<RobotPose | null>(null);
   const [isMapLoaded, setIsMapLoaded] = useState(false);
@@ -39,6 +44,13 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
   const latestMapRef = useRef<MapData | null>(null);
 
   useEffect(() => {
+    if (!cacheEnabled) {
+      latestMapRef.current = null;
+      setMapData(null);
+      setIsMapLoaded(false);
+      return;
+    }
+
     if (!mapTopic || typeof window === 'undefined') {
       return;
     }
@@ -55,7 +67,7 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
     } catch (error) {
       console.error('[useRosMap] Failed to restore cached map:', error);
     }
-  }, [mapTopic]);
+  }, [cacheEnabled, mapTopic]);
 
   // Subscribe to map
   useEffect(() => {
@@ -74,7 +86,7 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
       if (latestMapRef.current) {
         setMapData(latestMapRef.current);
         setIsMapLoaded(true);
-        if (typeof window !== 'undefined') {
+        if (cacheEnabled && typeof window !== 'undefined') {
           try {
             window.localStorage.setItem(
               getMapCacheKey(mapTopic),
@@ -106,7 +118,7 @@ export function useRosMap(ros: ROSLIB.Ros | null, mapTopic: string | null = '/ma
       }
       mapSub.unsubscribe();
     };
-  }, [ros, mapTopic, paused]);
+  }, [cacheEnabled, ros, mapTopic, paused]);
 
   return {
     mapData,

@@ -102,8 +102,9 @@ export function MapCanvas({
   const tfPaused = isPaused || !needsTf;
   const pathPaused = isPaused || !needsPath;
   const scanPaused = isPaused || !needsScan;
+  const mapCacheEnabled = mode !== 'navigation' && !useStaticMap;
 
-  const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused || useStaticMap);
+  const { mapData, robotPose } = useRosMap(ros, mapTopic, mapPaused || useStaticMap, mapCacheEnabled);
   const { robotPose: tfPose, resolvePoseInMap, tfVersion } = useRosTfTree(ros, tfPaused);
   const { globalPath } = useRosPath(ros, '/plan', pathPaused, pathResetToken);
   const { publishGoal } = useGoalPublisher(ros, '/goal_pose');
