@@ -89,8 +89,10 @@ def generate_launch_description():
             parameters=[{
                 'target_frame': pointcloud_target_frame,
                 'transform_tolerance': 0.05,
-                'min_height': -0.1,
-                'max_height': 1.2,
+                # The LiDAR/body origin is about 0.25m above base_footprint in mapping mode.
+                # Keep a +/-0.20m vertical slice around the LiDAR center.
+                'min_height': 0.05,
+                'max_height': 0.45,
                 'angle_min': -3.14159,
                 'angle_max': 3.14159,
                 'angle_increment': 0.0087,
