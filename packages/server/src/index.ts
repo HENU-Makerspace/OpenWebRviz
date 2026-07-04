@@ -519,13 +519,14 @@ async function proxyJanus(c: any) {
     targetUrl.search = requestUrl.search;
 
     const body = ['GET', 'HEAD'].includes(c.req.method) ? undefined : await c.req.arrayBuffer();
+    const timeoutMs = c.req.method === 'GET' ? 55000 : 15000;
     const response = await fetchWithTimeout(targetUrl.toString(), {
       method: c.req.method,
       headers: {
         'Content-Type': c.req.header('content-type') || 'application/json',
       },
       body,
-    }, 15000);
+    }, timeoutMs);
 
     const headers = new Headers();
     const contentType = response.headers.get('content-type');
