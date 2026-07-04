@@ -532,7 +532,10 @@ function buildWebrtcIceServers() {
   }
 
   return [{
-    urls: [`turn:${MEDIA_TURN_SERVER}:${MEDIA_TURN_PORT}?transport=${MEDIA_TURN_TYPE}`],
+    urls: Array.from(new Set([
+      `turn:${MEDIA_TURN_SERVER}:${MEDIA_TURN_PORT}?transport=${MEDIA_TURN_TYPE}`,
+      `turn:${MEDIA_TURN_SERVER}:${MEDIA_TURN_PORT}?transport=tcp`,
+    ])),
     username: MEDIA_TURN_USER,
     credential: MEDIA_TURN_PWD,
   }];
