@@ -11,6 +11,9 @@ export interface MediaConfig {
   preferredAudioStreamId: number;
   audioBridgeRoom: number;
   audioBridgeDisplay: string;
+  iceServers?: RTCIceServer[];
+  iceTransportPolicy?: RTCIceTransportPolicy;
+  forceRelay?: boolean;
 }
 
 interface MediaServiceStatus {
@@ -404,6 +407,8 @@ export function useRobotMedia(config: MediaConfig | null) {
       janusCreatePromiseRef.current = new Promise<any>((resolve, reject) => {
         const janus = new window.Janus({
           server: config.janusApiUrl,
+          iceServers: config.iceServers,
+          iceTransportPolicy: config.iceTransportPolicy,
           success: () => {
             janusRef.current = janus;
             janusCreatePromiseRef.current = null;
@@ -605,9 +610,12 @@ export function useRobotMedia(config: MediaConfig | null) {
               { type: 'data' },
             ],
             success: (answerJsep: unknown) => {
+              const outboundJsep = config.forceRelay
+                ? { ...(answerJsep as Record<string, unknown>), force_relay: true }
+                : answerJsep;
               activeHandle.send({
                 message: { request: 'start' },
-                jsep: answerJsep,
+                jsep: outboundJsep,
               });
             },
             error: (err: unknown) => {
@@ -804,12 +812,15 @@ export function useRobotMedia(config: MediaConfig | null) {
                 { type: 'audio', capture: microphoneTrack, recv: true },
               ],
               success: (offerJsep: unknown) => {
+                const outboundJsep = config.forceRelay
+                  ? { ...(offerJsep as Record<string, unknown>), force_relay: true }
+                  : offerJsep;
                 handle.send({
                   message: {
                     request: 'configure',
                     muted: false,
                   },
-                  jsep: offerJsep,
+                  jsep: outboundJsep,
                 });
                 setTalkbackActive(true);
               },

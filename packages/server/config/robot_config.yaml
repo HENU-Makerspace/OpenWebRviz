@@ -51,6 +51,11 @@ media:
   janus_html_dir: "/opt/janus/share/janus/html"
   adapter_asset: "adapter.min.js"
   janus_script_asset: "janus.js"
+  turn_server: "qiuhua.ying-guang.com"
+  turn_port: 3478
+  turn_type: "udp"
+  turn_user: "webbot"
+  turn_pwd: "webbot_turn_20260517"
   streaming_path: "/demos/streaming.html#"
   audiobridge_path: "/demos/audiobridge.html"
   audio_capture_device: "plughw:CARD=UACDemoV10,DEV=0"

@@ -6,6 +6,11 @@ JANUS_HTML_DIR="/opt/janus/share/janus/html"
 JANUS_DEMO_PORT="8000"
 JANUS_CONFIG_DIR="/opt/janus/etc/janus"
 JANUS_RUNTIME_CONFIG_DIR="${HOME}/.config/webbot/janus"
+JANUS_TURN_SERVER=""
+JANUS_TURN_PORT="3478"
+JANUS_TURN_TYPE="udp"
+JANUS_TURN_USER=""
+JANUS_TURN_PWD=""
 
 AUDIO_CAPTURE_DEVICE="plughw:CARD=UACDemoV10,DEV=0"
 AUDIO_CAPTURE_PORT="5005"
@@ -62,6 +67,16 @@ prepare_janus_runtime_config() {
       -e 's/^[[:space:]]*stun_server[[:space:]]*=.*$/# stun_server disabled by webbot-media.sh/' \
       -e 's/^[[:space:]]*stun_port[[:space:]]*=.*$/# stun_port disabled by webbot-media.sh/' \
       "${main_cfg}"
+    if [[ -n "${JANUS_TURN_SERVER}" && -n "${JANUS_TURN_USER}" && -n "${JANUS_TURN_PWD}" ]]; then
+      sed -i \
+        -e "s|^[[:space:]]*#\\?[[:space:]]*turn_server[[:space:]]*=.*$|\tturn_server = \"${JANUS_TURN_SERVER}\"|" \
+        -e "s|^[[:space:]]*#\\?[[:space:]]*turn_port[[:space:]]*=.*$|\tturn_port = ${JANUS_TURN_PORT}|" \
+        -e "s|^[[:space:]]*#\\?[[:space:]]*turn_type[[:space:]]*=.*$|\tturn_type = \"${JANUS_TURN_TYPE}\"|" \
+        -e "s|^[[:space:]]*#\\?[[:space:]]*turn_user[[:space:]]*=.*$|\tturn_user = \"${JANUS_TURN_USER}\"|" \
+        -e "s|^[[:space:]]*#\\?[[:space:]]*turn_pwd[[:space:]]*=.*$|\tturn_pwd = \"${JANUS_TURN_PWD}\"|" \
+        -e "s|^[[:space:]]*#\\?[[:space:]]*allow_force_relay[[:space:]]*=.*$|\tallow_force_relay = true|" \
+        "${main_cfg}"
+    fi
   fi
 
   if [[ -f "${JANUS_CONFIG_DIR}/janus.transport.http.jcfg" ]]; then

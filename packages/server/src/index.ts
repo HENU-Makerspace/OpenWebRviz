@@ -102,6 +102,11 @@ function buildSettingsPayload(sourceConfig: YamlConfig) {
       serviceName: asString(media.service_name, 'webbot-media.service'),
       videoServiceName: asString(media.video_service_name, 'webbot-video.service'),
       controlServiceName: asString(media.control_service_name, 'webbot-media-control.service'),
+      turnServer: asString(media.turn_server, ''),
+      turnPort: asNumber(media.turn_port, 3478),
+      turnType: asString(media.turn_type, 'udp'),
+      turnUser: asString(media.turn_user, ''),
+      turnPassword: asString(media.turn_pwd, ''),
     },
     face: {
       videoDevice: asString(face.video_device, '/dev/video0'),
@@ -179,6 +184,11 @@ function renderMediaEnv(sourceConfig: YamlConfig) {
   return `JANUS_BINARY=${shellQuote(asString(media.janus_binary, '/opt/janus/bin/janus'))}
 JANUS_HTML_DIR=${shellQuote(asString(media.janus_html_dir, '/opt/janus/share/janus/html'))}
 JANUS_DEMO_PORT=${shellQuote(String(asNumber(media.janus_demo_port, 8000)))}
+JANUS_TURN_SERVER=${shellQuote(asString(media.turn_server, ''))}
+JANUS_TURN_PORT=${shellQuote(String(asNumber(media.turn_port, 3478)))}
+JANUS_TURN_TYPE=${shellQuote(asString(media.turn_type, 'udp'))}
+JANUS_TURN_USER=${shellQuote(asString(media.turn_user, ''))}
+JANUS_TURN_PWD=${shellQuote(asString(media.turn_pwd, ''))}
 AUDIO_CAPTURE_DEVICE=${shellQuote(asString(media.audio_capture_device, 'plughw:CARD=UACDemoV10,DEV=0'))}
 AUDIO_CAPTURE_PORT=${shellQuote(String(asNumber(media.audio_capture_port, 5005)))}
 AUDIO_STREAM_ID=${shellQuote(String(asNumber(media.preferred_audio_stream_id, 99)))}
@@ -259,6 +269,11 @@ const MEDIA_AUDIO_BRIDGE_SECRET = config?.media?.audiobridge_secret || 'adminpwd
 const MEDIA_AUDIO_BRIDGE_FORWARD_HOST = config?.media?.audiobridge_forward_host || '127.0.0.1';
 const MEDIA_AUDIO_BRIDGE_FORWARD_PORT = config?.media?.audiobridge_forward_port || MEDIA_AUDIO_PLAYBACK_PORT;
 const MEDIA_AUDIO_BRIDGE_DISPLAY = config?.media?.audiobridge_display || 'webbot-ui';
+const MEDIA_TURN_SERVER = asString(config?.media?.turn_server, '');
+const MEDIA_TURN_PORT = asNumber(config?.media?.turn_port, 3478);
+const MEDIA_TURN_TYPE = asString(config?.media?.turn_type, 'udp');
+const MEDIA_TURN_USER = asString(config?.media?.turn_user, '');
+const MEDIA_TURN_PWD = asString(config?.media?.turn_pwd, '');
 const MEDIA_CONTROL_PROXY_HOST = config?.media?.control_proxy_host || '127.0.0.1';
 const MEDIA_CONTROL_PROXY_PORT = config?.media?.control_proxy_port || 19110;
 const FRONTEND_WS_URL = process.env.FRONTEND_WS_URL || config?.frontend?.ws_url || '';
@@ -511,6 +526,22 @@ function jsonErrorResponse(c: any, error: unknown, fallbackError: string, status
   }, status);
 }
 
+function buildWebrtcIceServers() {
+  if (!MEDIA_TURN_SERVER || !MEDIA_TURN_USER || !MEDIA_TURN_PWD) {
+    return [];
+  }
+
+  return [{
+    urls: [`turn:${MEDIA_TURN_SERVER}:${MEDIA_TURN_PORT}?transport=${MEDIA_TURN_TYPE}`],
+    username: MEDIA_TURN_USER,
+    credential: MEDIA_TURN_PWD,
+  }];
+}
+
+function isWebrtcRelayEnabled() {
+  return buildWebrtcIceServers().length > 0;
+}
+
 async function proxyJanus(c: any) {
   try {
     const requestUrl = new URL(c.req.url);
@@ -584,6 +615,9 @@ app.get('/api/config', (c) => {
       preferredAudioStreamId: Number(MEDIA_AUDIO_STREAM_ID) || 0,
       audioBridgeRoom: Number(MEDIA_AUDIO_BRIDGE_ROOM),
       audioBridgeDisplay: MEDIA_AUDIO_BRIDGE_DISPLAY,
+      iceServers: buildWebrtcIceServers(),
+      iceTransportPolicy: isWebrtcRelayEnabled() ? 'relay' : undefined,
+      forceRelay: isWebrtcRelayEnabled(),
     },
     face: {
       enabled: true,

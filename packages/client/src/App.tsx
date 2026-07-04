@@ -59,6 +59,9 @@ interface ServerConfig {
     preferredAudioStreamId: number;
     audioBridgeRoom: number;
     audioBridgeDisplay: string;
+    iceServers?: RTCIceServer[];
+    iceTransportPolicy?: RTCIceTransportPolicy;
+    forceRelay?: boolean;
   };
   face: {
     enabled: boolean;
