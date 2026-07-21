@@ -5,10 +5,12 @@ import { promisify } from 'util';
 import * as fs from 'fs';
 import * as os from 'node:os';
 import * as path from 'path';
+import { createRequire } from 'node:module';
 import { loadRobotConfig, mergeYamlConfig, saveYamlConfig, type YamlConfig, type YamlPrimitive } from './config';
 
 const execAsync = promisify(exec);
 const app = new Hono();
+const require = createRequire(import.meta.url);
 
 const MAPS_DIR = path.join(process.cwd(), 'maps');
 const MAP_LIST_PATH = path.join(process.cwd(), 'maps-list.json');
@@ -36,6 +38,26 @@ function asNumber(value: YamlPrimitive | undefined, fallback = 0) {
   if (typeof value === 'number') return value;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function findLocalWebrtcAdapterPath() {
+  try {
+    return require.resolve('webrtc-adapter/out/adapter.js');
+  } catch {}
+
+  const bunStoreDir = path.join(process.cwd(), '..', '..', 'node_modules', '.bun');
+  if (!fs.existsSync(bunStoreDir)) {
+    return '';
+  }
+
+  const candidate = fs.readdirSync(bunStoreDir)
+    .filter((entry) => entry.startsWith('webrtc-adapter@'))
+    .sort()
+    .reverse()
+    .map((entry) => path.join(bunStoreDir, entry, 'node_modules', 'webrtc-adapter', 'out', 'adapter.js'))
+    .find((entry) => fs.existsSync(entry));
+
+  return candidate || '';
 }
 
 function renderMediaControlExecStart(sourceConfig: YamlConfig) {
@@ -261,6 +283,7 @@ const JANUS_ADAPTER_ASSET = config?.media?.adapter_asset || 'adapter.min.js';
 const JANUS_SCRIPT_ASSET = config?.media?.janus_script_asset || 'janus.js';
 const LOCAL_JANUS_GATEWAY_DIR = asString(config?.media?.local_janus_gateway_dir, path.join(process.cwd(), '..', '..', 'janus-gateway'));
 const LOCAL_JANUS_DEMOS_DIR = path.join(LOCAL_JANUS_GATEWAY_DIR, 'html', 'demos');
+const LOCAL_WEBRTC_ADAPTER_PATH = findLocalWebrtcAdapterPath();
 const MEDIA_AUDIO_PLAYBACK_PORT = config?.media?.audio_playback_port || 5006;
 const MEDIA_VIDEO_STREAM_ID = config?.media?.preferred_video_stream_id || 0;
 const MEDIA_AUDIO_STREAM_ID = config?.media?.preferred_audio_stream_id || 0;
@@ -849,6 +872,12 @@ app.get('/api/media/assets/*', async (c) => {
   const safeAssetPath = path.basename(assetPath);
   const remoteAssetBasePath = safeAssetPath === JANUS_SCRIPT_ASSET ? '/demos' : '';
 
+  if (safeAssetPath === JANUS_ADAPTER_ASSET && LOCAL_WEBRTC_ADAPTER_PATH && fs.existsSync(LOCAL_WEBRTC_ADAPTER_PATH)) {
+    return new Response(fs.readFileSync(LOCAL_WEBRTC_ADAPTER_PATH), {
+      headers: { 'Content-Type': 'application/javascript; charset=utf-8' },
+    });
+  }
+
   if (safeAssetPath === JANUS_SCRIPT_ASSET) {
     const localScriptPath = path.join(LOCAL_JANUS_DEMOS_DIR, JANUS_SCRIPT_ASSET);
     if (fs.existsSync(localScriptPath)) {
@@ -859,7 +888,7 @@ app.get('/api/media/assets/*', async (c) => {
   }
 
   if (safeAssetPath === JANUS_ADAPTER_ASSET) {
-    return c.text('adapter asset is now loaded from the frontend bundle', 404);
+    return c.text('Local WebRTC adapter asset is unavailable on the server', 404);
   }
 
   try {

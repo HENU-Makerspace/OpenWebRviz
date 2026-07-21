@@ -117,7 +117,11 @@ type LegacyNavigator = Navigator & {
 
 const scriptCache = new Map<string, Promise<void>>();
 let janusInitPromise: Promise<void> | null = null;
-const ADAPTER_CDN_URL = 'https://cdnjs.cloudflare.com/ajax/libs/webrtc-adapter/9.0.3/adapter.min.js';
+const ADAPTER_ASSET_NAME = 'adapter.min.js';
+const VIDEO_PIPELINE_READY_TIMEOUT_MS = 12000;
+const VIDEO_PIPELINE_READY_POLL_MS = 400;
+const VIDEO_CONNECT_RETRY_DELAY_MS = 800;
+const VIDEO_CONNECT_RETRY_COUNT = 5;
 
 async function readJsonResponse<T>(response: Response): Promise<T> {
   const raw = await response.text();
@@ -178,8 +182,30 @@ function loadScript(src: string) {
   return promise;
 }
 
+function wait(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function buildAdapterScriptUrl(janusScriptUrl: string) {
+  return new URL(ADAPTER_ASSET_NAME, new URL(janusScriptUrl, window.location.origin)).toString();
+}
+
+function isRetriableVideoStartError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return [
+    'Janus is unavailable',
+    'No video stream found on Janus',
+    'Failed to fetch',
+    'Failed to load',
+    'No such session',
+    '458',
+  ].some((fragment) => message.includes(fragment));
+}
+
 async function ensureJanusRuntime(config: MediaConfig) {
-  await loadScript(ADAPTER_CDN_URL);
+  await loadScript(buildAdapterScriptUrl(config.janusScriptUrl));
   await loadScript(config.janusScriptUrl);
 
   if (!window.Janus) {
@@ -391,6 +417,24 @@ export function useRobotMedia(config: MediaConfig | null) {
       return null;
     }
   }, [config, requestJson]);
+
+  const waitForVideoPipelineReady = useCallback(async () => {
+    let latestStatus: MediaStatusResponse | null = null;
+    const deadline = Date.now() + VIDEO_PIPELINE_READY_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      latestStatus = await refreshStatus();
+      const frameCount = latestStatus?.video?.frameCount ?? 0;
+
+      if (latestStatus?.video?.active && frameCount > 0) {
+        return latestStatus;
+      }
+
+      await wait(VIDEO_PIPELINE_READY_POLL_MS);
+    }
+
+    return latestStatus;
+  }, [refreshStatus]);
 
   const ensureSession = useCallback(async () => {
     if (!config) {
@@ -715,19 +759,55 @@ export function useRobotMedia(config: MediaConfig | null) {
   const startVideo = useCallback(async () => {
     setLoadingAction('video');
     setError(null);
+    let videoServiceStartedThisAttempt = false;
     try {
       if (!serviceStatus.video?.active) {
         await requestJson('/api/media/video/start', { method: 'POST' });
+        videoServiceStartedThisAttempt = true;
       }
-      await refreshStatus();
-      await connectStreaming('video');
+
+      const status = await waitForVideoPipelineReady();
+      if (!status?.video?.active) {
+        throw new Error('Video pipeline is unavailable on the robot');
+      }
+
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= VIDEO_CONNECT_RETRY_COUNT; attempt += 1) {
+        try {
+          await connectStreaming('video');
+          await refreshStatus();
+          return;
+        } catch (err) {
+          lastError = err;
+          disconnectVideoStream();
+
+          if (attempt >= VIDEO_CONNECT_RETRY_COUNT || !isRetriableVideoStartError(err)) {
+            throw err;
+          }
+
+          await wait(VIDEO_CONNECT_RETRY_DELAY_MS);
+        }
+      }
+
+      throw lastError instanceof Error ? lastError : new Error(String(lastError));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      await stopVideo();
+      disconnectVideoStream();
+      await refreshStatus();
+      const detail = err instanceof Error ? err.message : String(err);
+      setError(videoServiceStartedThisAttempt
+        ? `${detail} Video service is still running on the robot, so you can retry without restarting it.`
+        : detail);
     } finally {
       setLoadingAction(null);
     }
-  }, [connectStreaming, refreshStatus, requestJson, serviceStatus.video?.active, stopVideo]);
+  }, [
+    connectStreaming,
+    disconnectVideoStream,
+    refreshStatus,
+    requestJson,
+    serviceStatus.video?.active,
+    waitForVideoPipelineReady,
+  ]);
 
   const startAudioMonitor = useCallback(async () => {
     setLoadingAction('audio');
@@ -879,19 +959,8 @@ export function useRobotMedia(config: MediaConfig | null) {
       return;
     }
 
-    void (async () => {
-      const status = await refreshStatus();
-
-      if (status?.video?.active) {
-        disconnectVideoStream();
-        try {
-          await requestJson('/api/media/video/stop', { method: 'POST' });
-        } catch {
-          // Ignore initial cleanup failure and let manual controls handle it.
-        }
-        await refreshStatus();
-      }
-    })();
+    disconnectVideoStream();
+    void refreshStatus();
 
     const timer = window.setInterval(() => {
       void refreshStatus();
@@ -900,15 +969,15 @@ export function useRobotMedia(config: MediaConfig | null) {
     return () => {
       window.clearInterval(timer);
     };
-  }, [config, disconnectVideoStream, refreshStatus, requestJson]);
+  }, [config, disconnectVideoStream, refreshStatus]);
 
   useEffect(() => {
     return () => {
-      void stopVideo();
+      disconnectVideoStream();
       stopAudioMonitor();
       void stopTalkback();
     };
-  }, [stopAudioMonitor, stopTalkback, stopVideo]);
+  }, [disconnectVideoStream, stopAudioMonitor, stopTalkback]);
 
   return {
     videoRef,
