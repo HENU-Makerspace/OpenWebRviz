@@ -40,12 +40,13 @@ interface SettingsPayload {
 
 const { config, profile: configProfile, configPath } = loadRobotConfig(`${process.cwd()}/packages/server/config`);
 const CLOUD_HOST = String(config.server?.host || '182.43.86.126');
-const JETSON_HOST = String(config.jetson?.host || '192.168.43.100');
 
 const args = new Set(process.argv.slice(2));
 const once = args.has('--once');
 const intervalArg = process.argv.find((arg) => arg.startsWith('--interval='));
+const hostArg = process.argv.find((arg) => arg.startsWith('--host=') || arg.startsWith('--robot-ip=') || arg.startsWith('--robot-host='));
 const intervalMs = Math.max(1000, Number(intervalArg?.split('=')[1] || 3000));
+const JETSON_HOST = String(hostArg?.split('=')[1] || process.env.ROBOT_HOST || process.env.JETSON_HOST || config.jetson?.host || '192.168.43.100');
 
 function color(text: string, code: number) {
   return `\u001b[${code}m${text}\u001b[0m`;

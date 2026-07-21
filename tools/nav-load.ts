@@ -5,13 +5,13 @@ import { loadRobotConfig } from '../packages/server/src/config';
 const execFileAsync = promisify(execFile);
 
 const { config } = loadRobotConfig(`${process.cwd()}/packages/server/config`);
-const defaultHost = String(config.jetson?.host || '192.168.1.58');
 
 const args = new Set(process.argv.slice(2));
 const intervalArg = process.argv.find((arg) => arg.startsWith('--interval='));
-const hostArg = process.argv.find((arg) => arg.startsWith('--host='));
+const hostArg = process.argv.find((arg) => arg.startsWith('--host=') || arg.startsWith('--robot-ip=') || arg.startsWith('--robot-host='));
 const once = args.has('--once');
 const intervalMs = Math.max(1000, Number(intervalArg?.split('=')[1] || 2000));
+const defaultHost = String(process.env.ROBOT_HOST || process.env.JETSON_HOST || config.jetson?.host || '192.168.1.58');
 const host = hostArg?.split('=')[1] || defaultHost;
 const sshTarget = host.includes('@') ? host : `nvidia@${host}`;
 const width = Math.max(24, Math.min(Number(process.stdout.columns || 120) - 56, 80));

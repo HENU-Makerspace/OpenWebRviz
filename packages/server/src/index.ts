@@ -23,6 +23,32 @@ process.env.no_proxy = '*';
 
 const { config, configPath, profile: configProfile } = loadRobotConfig(path.join(process.cwd(), 'config'));
 
+function readArgValue(...names: string[]) {
+  for (const arg of process.argv.slice(2)) {
+    for (const name of names) {
+      if (arg === name) {
+        return '';
+      }
+
+      const prefix = `${name}=`;
+      if (arg.startsWith(prefix)) {
+        return arg.slice(prefix.length);
+      }
+    }
+  }
+
+  return '';
+}
+
+function readRuntimeRobotHost() {
+  return (
+    readArgValue('--robot-ip', '--robot-host') ||
+    process.env.ROBOT_HOST ||
+    process.env.JETSON_HOST ||
+    ''
+  ).trim();
+}
+
 function loadCurrentRobotConfig() {
   return loadRobotConfig(path.join(process.cwd(), 'config'), configProfile);
 }
@@ -271,9 +297,10 @@ const SERVER_HOST = config?.server?.host || process.env.SERVER_HOST || '192.168.
 const SERVER_PORT = config?.server?.port || process.env.SERVER_PORT || 4001;
 
 // Jetson configuration
-const JETSON_HOST = config?.jetson?.host || process.env.JETSON_HOST || '192.168.43.100';
+const RUNTIME_ROBOT_HOST = readRuntimeRobotHost();
+const JETSON_HOST = RUNTIME_ROBOT_HOST || config?.jetson?.host || '192.168.43.100';
 const JETSON_ROSBRIDGE_PORT = config?.jetson?.rosbridge_port || 9090;
-const JANUS_HOST = config?.media?.janus_host || JETSON_HOST;
+const JANUS_HOST = process.env.JANUS_HOST || RUNTIME_ROBOT_HOST || config?.media?.janus_host || JETSON_HOST;
 const JANUS_HTTP_PORT = config?.media?.janus_http_port || 8088;
 const JANUS_API_PATH = config?.media?.janus_api_path || '/janus';
 const JANUS_DEMO_PORT = config?.media?.janus_demo_port || 8000;
@@ -297,10 +324,10 @@ const MEDIA_TURN_PORT = asNumber(config?.media?.turn_port, 3478);
 const MEDIA_TURN_TYPE = asString(config?.media?.turn_type, 'udp');
 const MEDIA_TURN_USER = asString(config?.media?.turn_user, '');
 const MEDIA_TURN_PWD = asString(config?.media?.turn_pwd, '');
-const MEDIA_CONTROL_PROXY_HOST = config?.media?.control_proxy_host || '127.0.0.1';
+const MEDIA_CONTROL_PROXY_HOST = process.env.MEDIA_CONTROL_PROXY_HOST || RUNTIME_ROBOT_HOST || config?.media?.control_proxy_host || '127.0.0.1';
 const MEDIA_CONTROL_PROXY_PORT = config?.media?.control_proxy_port || 19110;
-const FRONTEND_WS_URL = process.env.FRONTEND_WS_URL || config?.frontend?.ws_url || '';
-const FACE_PROXY_HOST = config?.face?.proxy_host || '127.0.0.1';
+const FRONTEND_WS_URL = process.env.FRONTEND_WS_URL || (RUNTIME_ROBOT_HOST ? `ws://${JETSON_HOST}:${JETSON_ROSBRIDGE_PORT}` : config?.frontend?.ws_url || '');
+const FACE_PROXY_HOST = process.env.FACE_PROXY_HOST || RUNTIME_ROBOT_HOST || config?.face?.proxy_host || '127.0.0.1';
 const FACE_PROXY_PORT = config?.face?.proxy_port || 19100;
 const FACE_API_PATH = config?.face?.api_path || '/faces/latest';
 const FACE_HEALTH_PATH = config?.face?.health_path || '/health';
@@ -309,6 +336,7 @@ const FACE_POLL_INTERVAL_MS = config?.face?.poll_interval_ms || 500;
 console.log('[Config] Loaded config:', {
   configProfile,
   configPath,
+  RUNTIME_ROBOT_HOST,
   SERVER_HOST,
   JETSON_HOST,
   JETSON_ROSBRIDGE_PORT,
