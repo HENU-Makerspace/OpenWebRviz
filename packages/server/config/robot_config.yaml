@@ -72,7 +72,7 @@ media:
   video_port: 8004
   video_width: 1280
   video_height: 720
-  video_framerate: "30/1"
+  video_framerate: "20/1"
   video_bitrate: 2500
   video_format: "mjpeg"
   preferred_video_stream_id: 101
