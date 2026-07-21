@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export interface FaceConfig {
   enabled: boolean;
@@ -40,61 +40,36 @@ const EMPTY_SNAPSHOT: FaceSnapshot = {
 export function useFaceRecognition(config: FaceConfig | null, active: boolean) {
   const [snapshot, setSnapshot] = useState<FaceSnapshot>(EMPTY_SNAPSHOT);
   const [error, setError] = useState<string | null>(null);
-  const inFlightRef = useRef<{
-    controller: AbortController;
-    promise: Promise<void>;
-  } | null>(null);
 
-  const refresh = useCallback((): Promise<void> => {
+  const refresh = useCallback(async () => {
     if (!config?.enabled) {
       setSnapshot(EMPTY_SNAPSHOT);
-      return Promise.resolve();
+      return;
     }
 
-    if (inFlightRef.current) {
-      return inFlightRef.current.promise;
-    }
+    try {
+      const response = await fetch(config.latestUrl);
+      const data = await response.json();
 
-    const controller = new AbortController();
-    const promise = (async () => {
-      try {
-        const response = await fetch(config.latestUrl, {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data?.error || `Request failed: ${response.status}`);
-        }
-
-        setSnapshot({
-          online: Boolean(data?.online),
-          updatedAt: data?.updatedAt || null,
-          frameWidth: Number(data?.frameWidth) || 0,
-          frameHeight: Number(data?.frameHeight) || 0,
-          faces: Array.isArray(data?.faces) ? data.faces : [],
-        });
-        setError(null);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
-          return;
-        }
-
-        setSnapshot((current) => ({
-          ...current,
-          online: false,
-        }));
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (inFlightRef.current?.controller === controller) {
-          inFlightRef.current = null;
-        }
+      if (!response.ok) {
+        throw new Error(data?.error || `Request failed: ${response.status}`);
       }
-    })();
 
-    inFlightRef.current = { controller, promise };
-    return promise;
+      setSnapshot({
+        online: Boolean(data?.online),
+        updatedAt: data?.updatedAt || null,
+        frameWidth: Number(data?.frameWidth) || 0,
+        frameHeight: Number(data?.frameHeight) || 0,
+        faces: Array.isArray(data?.faces) ? data.faces : [],
+      });
+      setError(null);
+    } catch (err) {
+      setSnapshot((current) => ({
+        ...current,
+        online: false,
+      }));
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }, [config]);
 
   useEffect(() => {
@@ -102,27 +77,13 @@ export function useFaceRecognition(config: FaceConfig | null, active: boolean) {
       return;
     }
 
-    let stopped = false;
-    let timer: number | null = null;
-    const intervalMs = Math.max(Number(config.pollIntervalMs) || 500, 200);
-
-    const poll = async () => {
-      await refresh();
-      if (!stopped) {
-        timer = window.setTimeout(() => {
-          void poll();
-        }, intervalMs);
-      }
-    };
-
-    void poll();
+    void refresh();
+    const timer = window.setInterval(() => {
+      void refresh();
+    }, Math.max(Number(config.pollIntervalMs) || 500, 200));
 
     return () => {
-      stopped = true;
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
-      inFlightRef.current?.controller.abort();
+      window.clearInterval(timer);
     };
   }, [active, config, refresh]);
 
