@@ -70,8 +70,8 @@ media:
   audiobridge_display: "webbot-ui"
   video_device: "/dev/v4l/by-id/usb-LRCP_imx334_LRCP_imx334_01.00.00-video-index0"
   video_port: 8004
-  video_width: 1280
-  video_height: 720
+  video_width: 640
+  video_height: 480
   video_framerate: "20/1"
   video_bitrate: 2500
   video_format: "mjpeg"
