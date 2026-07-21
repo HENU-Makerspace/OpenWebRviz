@@ -6,7 +6,7 @@ VIDEO_PORT="8004"
 VIDEO_WIDTH="1280"
 VIDEO_HEIGHT="720"
 VIDEO_FRAMERATE="30/1"
-VIDEO_BITRATE="4000"
+VIDEO_BITRATE="2500"
 VIDEO_FACE_FRAME_RATE="6/1"
 VIDEO_ENV_FILE="${HOME}/.config/webbot/video.env"
 VIDEO_FORMAT=""
@@ -64,11 +64,11 @@ run_video_pipeline() {
         jpegdec ! \
         nvvideoconvert ! \
         tee name=t \
-          t. ! queue ! video/x-raw,format=I420 ! \
-            x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast ! \
+          t. ! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! video/x-raw,format=I420 ! \
+            x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast key-int-max=30 bframes=0 ! \
             rtph264pay config-interval=1 pt=96 ! \
             udpsink host=127.0.0.1 port="${VIDEO_PORT}" \
-          t. ! queue ! \
+          t. ! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! \
             videorate ! video/x-raw,framerate="${VIDEO_FACE_FRAME_RATE}" ! \
             jpegenc ! multifilesink location="${FRAME_DIR}/frame-%05d.jpg" max-files=4
       ;;
@@ -79,11 +79,11 @@ run_video_pipeline() {
         video/x-raw,format=YUY2,width="${VIDEO_WIDTH}",height="${VIDEO_HEIGHT}",framerate="${VIDEO_FRAMERATE}" ! \
         videoconvert ! \
         tee name=t \
-          t. ! queue ! video/x-raw,format=I420 ! \
-            x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast ! \
+          t. ! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! video/x-raw,format=I420 ! \
+            x264enc bitrate="${VIDEO_BITRATE}" tune=zerolatency speed-preset=ultrafast key-int-max=30 bframes=0 ! \
             rtph264pay config-interval=1 pt=96 ! \
             udpsink host=127.0.0.1 port="${VIDEO_PORT}" \
-          t. ! queue ! \
+          t. ! queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0 ! \
             videorate ! video/x-raw,framerate="${VIDEO_FACE_FRAME_RATE}" ! \
             jpegenc ! multifilesink location="${FRAME_DIR}/frame-%05d.jpg" max-files=4
       ;;
