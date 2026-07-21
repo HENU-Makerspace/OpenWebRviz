@@ -117,7 +117,7 @@ type LegacyNavigator = Navigator & {
 
 const scriptCache = new Map<string, Promise<void>>();
 let janusInitPromise: Promise<void> | null = null;
-const ADAPTER_ASSET_NAME = 'adapter.min.js';
+const ADAPTER_ASSET_URL = '/adapter.min.js';
 const VIDEO_PIPELINE_READY_TIMEOUT_MS = 12000;
 const VIDEO_PIPELINE_READY_POLL_MS = 400;
 const VIDEO_CONNECT_RETRY_DELAY_MS = 800;
@@ -188,10 +188,6 @@ function wait(ms: number) {
   });
 }
 
-function buildAdapterScriptUrl(janusScriptUrl: string) {
-  return new URL(ADAPTER_ASSET_NAME, new URL(janusScriptUrl, window.location.origin)).toString();
-}
-
 function isRetriableVideoStartError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return [
@@ -205,7 +201,7 @@ function isRetriableVideoStartError(error: unknown) {
 }
 
 async function ensureJanusRuntime(config: MediaConfig) {
-  await loadScript(buildAdapterScriptUrl(config.janusScriptUrl));
+  await loadScript(ADAPTER_ASSET_URL);
   await loadScript(config.janusScriptUrl);
 
   if (!window.Janus) {
